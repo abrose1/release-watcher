@@ -1,0 +1,17 @@
+preferences:
+  film_taste: >
+    I like slow-burn thrillers, literary drama, and thoughtful sci-fi.
+    I don't enjoy superhero films or broad comedy.
+  film_tmdb_genre_ids: [18, 53, 878]
+  quiet_hours:
+    start: "22:00"
+    end: "08:00"
+    timezone: "America/Los_Angeles"
+    behavior: queue
+    max_batch: 3
+  discovery_frequency: weekly
+  tier1_announcement_search: true
+
+watchlist:
+  tv:
+    shows: []
