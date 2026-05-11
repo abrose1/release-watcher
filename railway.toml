@@ -1,3 +1,5 @@
+# Cron schedules + module commands below. Builders also need a default start phase —
+# root main.py + nixpacks.toml satisfy Nixpacks/Railpack; see README Deployment.
 [build]
 builder = "nixpacks"
 

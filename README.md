@@ -129,11 +129,12 @@ watchlist:
 
 ## Deployment (Railway)
 
-Three Cron services + one Postgres in this Railway project:
+**Build / deploy:** Railway’s builder (Railpack/Nixpacks) needs a conventional Python start phase. Repo root **`main.py`** runs `python main.py` during image build/deploy only (smoke-imports `watcher`). **Scheduled runs** still use each service’s Cron **start command** — keep those as `python -m watcher....` below (and in the Dashboard if `railway.toml` doesn’t populate them).
 
 | Service | Schedule (UTC) | Command |
 |---------|---------------|---------|
 | daily-scan | `0 14 * * *` (6am PT) | `python -m watcher.jobs.watchlist` |
+| announcement-scan | `0 14 * * *` | `python -m watcher.jobs.announcement` |
 | weekly-discovery | `0 15 * * 0` (7am PT Sun) | `python -m watcher.jobs.discovery` |
 | weekly-sync | `0 13 * * 0` (5am PT Sun) | `python -m watcher.sync_creators` |
 

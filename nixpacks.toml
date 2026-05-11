@@ -1,0 +1,4 @@
+# Nixpacks requires a generated start phase for the image build. Cron services execute
+# their own start commands on schedule (see railway.toml).
+[start]
+cmd = "python main.py"
