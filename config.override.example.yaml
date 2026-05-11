@@ -1,0 +1,22 @@
+# Copy to config.override.yaml in the repo root (that filename is gitignored).
+# Merges on top of config.yaml — use for film taste prose, playlists, sms_first_name, TZ, TV.
+
+preferences:
+  # sms_first_name: "Ada"
+  film_taste: >
+    Describe how you explain film preferences to another human —
+    moods, eras, franchises to skip, directors you gravitate toward.
+
+  quiet_hours:
+    timezone: "America/Los_Angeles"
+
+  # spotify_seed_playlist_ids:
+  #   - your_user_owned_mirror_playlist_id_here
+
+watchlist:
+  tv:
+    # shows:
+    #   - name: Example Show
+    #     tier: 1
+    #     tmdb_id: 94997
+    shows: []

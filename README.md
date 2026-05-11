@@ -62,7 +62,7 @@ The watcher cannot run meaningfully until the taste profile is populated. Follow
 1. Set up `taste-profile` repo — run migrations, deploy Railway Postgres, run book and Spotify intake
 2. Set tier thresholds in taste-profile's `profile_metadata`
 3. Deploy this repo's Railway Postgres and run migrations: `alembic upgrade head`
-4. Fill in `config.yaml` — write your `film_taste` description, set `film_tmdb_genre_ids`, add TV shows with tiers, confirm `quiet_hours.timezone`
+4. Copy [`config.override.example.yaml`](./config.override.example.yaml) to **`config.override.yaml`** and fill film taste / playlists / `sms_first_name` / TZ — **or** set the optional env vars documented under [Config](#config). Repo `config.yaml` stays generic.
 5. Run `python -m watcher.sync_creators` locally to populate `tracked_creators`
 6. Dry-run the daily scan: `python -m watcher.jobs.watchlist --dry-run`
 7. Deploy Railway Cron services
@@ -87,26 +87,40 @@ TASTE_PROFILE_DATABASE_URL=... DATABASE_URL=... python -m watcher.jobs.discovery
 
 ## Config
 
-`config.yaml` controls operational settings, TV watchlist, and film taste. **No creator data lives here** — all book/music creators come from the taste profile DB.
+Tracked **`config.yaml`** is intentionally **generic** so the repo stays safe to fork. Customize via:
+
+1. **`config.override.yaml`** (copy from [`config.override.example.yaml`](./config.override.example.yaml)) — merged on top at runtime and **listed in `.gitignore`**. Prefer this on your laptop where you edit YAML normally.
+2. **Environment variables** (handy when Railway deploy builds from Git and you prefer not committing override YAML):
+
+   | Variable | Effect |
+   |----------|--------|
+   | `SMS_GREETING_NAME` or `SMS_FIRST_NAME` | Sets `preferences.sms_first_name` for SMS greetings. |
+   | `SPOTIFY_SEED_PLAYLIST_IDS` | Comma-separated Spotify **user-owned mirror** playlist IDs. |
+   | `FILM_TASTE` | Full film-taste prose for the judge (multiline OK in Railway / `.env`). |
+   | `FILM_TMDB_GENRE_IDS` | e.g. `18,53,878` → Drama, Thriller, Sci-Fi-style discovery seeding. |
+   | `SMS_QUIET_TIMEZONE` | IANA TZ for `preferences.quiet_hours.timezone`. |
+
+**Deploying locally with `railway up`:** the CLI **respects `.gitignore`** by default, so **`config.override.yaml` is not uploaded**. Use **`railway up --no-gitignore`** if you bundle an override file locally; or rely on Railway env vars above.
+
+**Synced taste data** (scores, tiers, tracked creators) still lives in Postgres (`taste-profile` DB + `tracked_creators`), not here.
+
+Minimal shape (see repo `config.yaml` for defaults):
 
 ```yaml
 preferences:
   film_taste: >
-    Plain-language description of your film taste for the Anthropic judge.
-  film_tmdb_genre_ids: [18, 53, 878]  # Drama, Thriller, Sci-Fi — set at setup
+    Plain-language description of film taste for the Anthropic judge.
+  film_tmdb_genre_ids: [18, 53, 878]
+
   quiet_hours:
     start: "22:00"
     end: "08:00"
     timezone: "America/Los_Angeles"
-    behavior: queue   # queue = hold until 08:00 | drop = discard silently
-    max_batch: 3      # max SMS sent at quiet-hours end to avoid flood
-  discovery_frequency: weekly
-  tier1_announcement_search: true
 
 watchlist:
   tv:
     shows:
-      - name: "Show Name"
+      - name: "Example show"
         tier: 1
         tmdb_id: 12345
 ```

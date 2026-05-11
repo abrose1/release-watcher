@@ -251,7 +251,7 @@ Called with: API metadata + web search results + relevant taste profile slice.
 2. **Discovery:** Does this fit the taste profile? Primary signal: style/genre similarity to highly scored creators. Review scores only filter out genuinely poor releases (not the ranking criterion). → `{notify: bool, reason: str, best_link: str}` where `reason` explains the taste similarity, not the star rating.
 3. **SMS reply (stretch):** Natural language → `{action: "mute"|"less"|"more"|"stop"|"add", creator: str, duration_days: int|null}`
 
-Discovery prompt is explicitly framed: *"Based on what Andrew already loves at the top of his taste profile, would he likely enjoy this? Describe the similarity. Do not cite review scores as a reason."*
+Discovery prompt is explicitly framed along the lines of: *given what you already strongly favor in the taste profile, would you likely enjoy this? Explain the stylistic/genre similarity; do not lean on review scores as the rationale.*
 
 ### TV Discovery
 
