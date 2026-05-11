@@ -1,6 +1,6 @@
 """Tests for notification formatting, quiet hours, and queue flushing."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -16,6 +16,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 
+@pytest.fixture(autouse=True)
+def _fixed_sms_opening(monkeypatch):
+    """Deterministic greetings; production uses varied openers."""
+    monkeypatch.setattr("watcher.notify._pick_sms_opening", lambda: "Hey,")
+
+
 class TestFormatWatchlistSMS:
     def test_basic_format(self):
         msg = format_watchlist_sms(
@@ -25,6 +31,7 @@ class TestFormatWatchlistSMS:
             release_type="album",
             link="https://example.com",
         )
+        assert msg.startswith("Hey,\n")
         assert "New Album" in msg
         assert "Artist" in msg
         assert "Album Title" in msg
@@ -93,6 +100,7 @@ class TestFormatDiscoverySMS:
             reason="Similar atmospheric style",
             link="https://example.com",
         )
+        assert msg.startswith("Hey,\n")
         assert "Rec" in msg
         assert "Music" in msg
         assert "New Song" in msg
@@ -179,8 +187,8 @@ class TestFlushQueue:
 
         queue_item = NotificationQueue(
             message_text="Test message",
-            queued_at=datetime.utcnow() - timedelta(hours=1),
-            send_after=datetime.utcnow() - timedelta(minutes=30),
+            queued_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1),
+            send_after=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=30),
             priority=10,
         )
         session.add(queue_item)
@@ -207,8 +215,8 @@ class TestFlushQueue:
         for i in range(5):
             queue_item = NotificationQueue(
                 message_text=f"Message {i}",
-                queued_at=datetime.utcnow() - timedelta(hours=1),
-                send_after=datetime.utcnow() - timedelta(minutes=30),
+                queued_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1),
+                send_after=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=30),
                 priority=i * 10,
             )
             session.add(queue_item)
@@ -232,8 +240,8 @@ class TestFlushQueue:
 
         queue_item = NotificationQueue(
             message_text="Test",
-            queued_at=datetime.utcnow() - timedelta(hours=1),
-            send_after=datetime.utcnow() - timedelta(minutes=30),
+            queued_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1),
+            send_after=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=30),
             priority=10,
         )
         session.add(queue_item)

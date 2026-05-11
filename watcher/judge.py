@@ -27,7 +27,7 @@ class SMSCommand:
     duration_days: int | None
 
 
-MODEL = "claude-3-5-haiku-20241022"
+MODEL = "claude-haiku-4-5"  # alias to latest Haiku; was claude-3-5-haiku-20241022 (retired)
 
 
 def _get_client() -> Anthropic:

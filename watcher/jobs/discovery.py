@@ -7,9 +7,9 @@ import argparse
 import asyncio
 import logging
 import sys
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 
-from watcher.config import get_film_taste, get_film_genre_ids
+from watcher.config import get_film_taste, get_film_genre_ids, get_spotify_seed_playlist_ids
 from watcher.db import get_session_factory
 from watcher.models import TrackedCreator, DiscoverySent, NotificationQueue
 from watcher.notify import (
@@ -42,7 +42,7 @@ def _send_or_queue_discovery(session, sms_text: str, discovery_sent: DiscoverySe
         queue_item = NotificationQueue(
             discovery_sent_id=discovery_sent.id,
             message_text=sms_text,
-            queued_at=datetime.utcnow(),
+            queued_at=datetime.now(timezone.utc).replace(tzinfo=None),
             send_after=next_send_after(),
             priority=50,
         )
@@ -52,66 +52,81 @@ def _send_or_queue_discovery(session, sms_text: str, discovery_sent: DiscoverySe
 
 
 async def discover_music(session, spotify: SpotifyClient, brave: BraveSearchClient, dry_run: bool) -> int:
-    """Music discovery via Spotify recommendations."""
-    top_music = (
-        session.query(TrackedCreator)
-        .filter(TrackedCreator.category == "music")
-        .order_by(TrackedCreator.profile_score_at_sync.desc())
-        .limit(5)
-        .all()
-    )
+    """Music discovery seeded from Spotify top-songs playlists.
 
-    seed_ids = [c.external_id for c in top_music if c.external_id]
-    if not seed_ids:
+    Aggregates tracks across all configured playlists, extracts unique artists
+    not already in TrackedCreators, then uses Brave Search to find new similar music.
+    """
+    playlist_ids = get_spotify_seed_playlist_ids()
+    if not playlist_ids:
+        logger.warning("No spotify_seed_playlist_ids configured — skipping music discovery")
         return 0
 
-    tracks = await spotify.get_recommendations(seed_ids)
+    tracked_names = {
+        c.name.lower()
+        for c in session.query(TrackedCreator).filter(TrackedCreator.category == "music").all()
+    }
+
+    # Collect unique artist names across all playlists, preserving order of first appearance
+    seen: set[str] = set()
+    seed_artists: list[str] = []
+    for playlist_id in playlist_ids:
+        tracks = await spotify.get_playlist_tracks(playlist_id)
+        for track in tracks:
+            for artist in track.artists:
+                key = artist.lower()
+                if key not in seen and key not in tracked_names:
+                    seen.add(key)
+                    seed_artists.append(artist)
+
+    if not seed_artists:
+        return 0
+
+    # Sample up to 5 artists spread across the combined pool
+    step = max(1, len(seed_artists) // 5)
+    seeds = seed_artists[::step][:5]
+
     sent = 0
-
-    for track in tracks:
-        artist_name = track.artists[0]["name"] if track.artists else "Unknown"
-        track_album = track.album
-        external_id = track_album.get("id", track.id) if isinstance(track_album, dict) else track.id
-
-        existing_creator = (
-            session.query(TrackedCreator)
-            .filter(TrackedCreator.name == artist_name)
-            .first()
-        )
-        if existing_creator:
-            continue
-
-        if _already_sent(session, external_id):
-            continue
-
-        search_results = await brave.search_release(artist_name, track.name)
+    for artist_name in seeds:
+        search_results = await brave.search_similar_music(artist_name)
         search_dicts = [{"title": r.title, "url": r.url, "snippet": r.snippet} for r in search_results]
 
-        # TODO: pass actual taste profile slice from tracked_creators scores
         taste_slice = {
-            "top_creators": [c.name for c in top_music],
+            "top_creators": seed_artists[:10],
             "film_taste": "",
         }
 
         result = judge_discovery_candidate(
-            candidate={"title": track.name, "creator": artist_name, "category": "music", "description": ""},
+            candidate={
+                "title": f"Music similar to {artist_name}",
+                "creator": "Various",
+                "category": "music",
+                "description": f"New music discovery based on playlist seed artist: {artist_name}",
+            },
             taste_profile_slice=taste_slice,
             search_results=search_dicts,
         )
 
         if result.notify:
             link = result.best_link or (search_dicts[0]["url"] if search_dicts else "")
-            sms_text = format_discovery_sms("music", track.name, artist_name, result.reason, link)
+            external_id = f"music_disc_{artist_name}_{date.today().isoformat()}"
+
+            if _already_sent(session, external_id):
+                continue
+
+            sms_text = format_discovery_sms(
+                "music", result.reason[:40], "Various", "", link
+            )
             discovery = DiscoverySent(
                 external_id=external_id,
                 category="music",
-                title=track.name,
-                creator_name=artist_name,
-                sent_at=datetime.utcnow(),
+                title=result.reason[:100],
+                creator_name="Various",
+                sent_at=datetime.now(timezone.utc).replace(tzinfo=None),
             )
             _send_or_queue_discovery(session, sms_text, discovery, dry_run)
             sent += 1
-            if sent >= 2:
+            if sent >= 1:
                 break
 
     return sent
@@ -159,7 +174,7 @@ async def discover_films(session, tmdb: TMDBClient, brave: BraveSearchClient, dr
                 category="film",
                 title=movie.title,
                 creator_name="Various",
-                sent_at=datetime.utcnow(),
+                sent_at=datetime.now(timezone.utc).replace(tzinfo=None),
             )
             _send_or_queue_discovery(session, sms_text, discovery, dry_run)
             sent += 1
@@ -221,7 +236,7 @@ async def discover_tv(session, tmdb: TMDBClient, brave: BraveSearchClient, dry_r
                     category="tv",
                     title=show.name,
                     creator_name=show.name,
-                    sent_at=datetime.utcnow(),
+                    sent_at=datetime.now(timezone.utc).replace(tzinfo=None),
                 )
                 _send_or_queue_discovery(session, sms_text, discovery, dry_run)
                 sent += 1
@@ -276,7 +291,7 @@ async def discover_books(session, brave: BraveSearchClient, dry_run: bool) -> in
                 category="book",
                 title=result.reason[:100],
                 creator_name="Various",
-                sent_at=datetime.utcnow(),
+                sent_at=datetime.now(timezone.utc).replace(tzinfo=None),
             )
             _send_or_queue_discovery(session, sms_text, discovery, dry_run)
             sent += 1

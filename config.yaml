@@ -1,4 +1,6 @@
 preferences:
+  # Optional: used only for casual SMS greetings. Omit for generic openers ("Hey,", "Morning,").
+  sms_first_name: "Andrew"
   film_taste: >
     I like slow-burn thrillers, literary drama, and thoughtful sci-fi.
     I don't enjoy superhero films or broad comedy.
@@ -6,11 +8,19 @@ preferences:
   quiet_hours:
     start: "22:00"
     end: "08:00"
-    timezone: "America/Los_Angeles"
+    timezone: "America/Phoenix"
     behavior: queue
     max_batch: 3
   discovery_frequency: weekly
   tier1_announcement_search: true
+  # Spotify playlists used as artist seeds for music discovery.
+  # Add or remove entries to adjust which playlists are sampled.
+  # These must be user-owned public playlists (Spotify's auto-generated
+  # `37i9dQZF*` Wrapped playlists are no longer reachable via the Web API).
+  spotify_seed_playlist_ids:
+    - "3xFSwHDkQrqzlIM6SMolJn"   # Top Songs 2025 (user-owned mirror)
+    - "6JCCGrO0GDo4hqB686N2FM"   # Top Songs 2024 (user-owned mirror)
+    - "5nfNRXwJCblT1fmzUexvAh"   # Top Songs 2023 (user-owned mirror)
 
 watchlist:
   tv:

@@ -1,16 +1,66 @@
 """Twilio SMS notifications with quiet hours and error alerting."""
 
 import logging
-from datetime import datetime, timedelta
+import random
+from datetime import datetime, timedelta, timezone
 
 import pytz
 from twilio.rest import Client as TwilioClient
 
-from watcher.config import get_env, get_quiet_hours_config
+from watcher.config import get_env, get_quiet_hours_config, get_sms_first_name
 from watcher.db import get_session_factory
 from watcher.models import NotificationQueue
 
 logger = logging.getLogger(__name__)
+
+GREET_GENERIC = (
+    "Hey,",
+    "Hey there,",
+    "Hi,",
+    "Hiya,",
+    "Morning,",
+    "What's good,",
+    "Heads up —",
+)
+
+GREET_WITH_NAME = (
+    "Hey {name},",
+    "Hi {name},",
+    "Morning {name},",
+    "{name}, quick note —",
+    "Hey {name} — FYI:",
+)
+
+
+def _pick_sms_opening() -> str:
+    """Return a casual one-line greeting, sometimes personalized from config."""
+    name = get_sms_first_name()
+    pool: list[str] = list(GREET_GENERIC)
+    if name:
+        pool.extend(template.format(name=name) for template in GREET_WITH_NAME)
+    return random.choice(pool)
+
+
+def _fit_watchlist_core(
+    type_label: str,
+    creator_name: str,
+    title: str,
+    link: str,
+    max_len: int,
+) -> str:
+    """Body only (no greeting). Fits in max_len; keeps link; may truncate quoted title."""
+    line1 = f"{type_label} \u00b7 {creator_name}"
+    core = f"{line1}\n\"{title}\"\n{link}"
+    if len(core) <= max_len:
+        return core
+
+    framing = len(f'{line1}\n""\n{link}')
+    available = max_len - framing - 3
+    if available > 0:
+        return f'{line1}\n"{title[:available]}..."\n{link}'
+    if len(f"{line1}\n{link}") <= max_len:
+        return f"{line1}\n{link}"
+    return f"{line1}\n{link}"[:max_len]
 
 
 def format_watchlist_sms(
@@ -20,7 +70,7 @@ def format_watchlist_sms(
     release_type: str,
     link: str,
 ) -> str:
-    """Format a watchlist hit SMS. Keeps under 160 chars where possible."""
+    """Format a watchlist hit SMS. Casual opener + facts; stays under ~160 GSM chars."""
     type_label = {
         "album": "New Album",
         "single": "New Single",
@@ -29,14 +79,44 @@ def format_watchlist_sms(
         "announcement": "Announced",
     }.get(release_type, "New Release")
 
-    msg = f"{type_label} \u00b7 {creator_name}\n\"{title}\"\n{link}"
-    if len(msg) > 160:
-        available = 160 - len(f"{type_label} \u00b7 {creator_name}\n\"\"\n{link}") - 3
-        if available > 0:
-            msg = f"{type_label} \u00b7 {creator_name}\n\"{title[:available]}...\"\n{link}"
-        else:
-            msg = f"{type_label} \u00b7 {creator_name}\n{link}"
-    return msg[:160]
+    opening = _pick_sms_opening()
+    budget = 160 - len(opening) - 1  # newline between greeting and body
+    if budget <= 0:
+        return (opening[:160])[:160]
+    core = _fit_watchlist_core(type_label, creator_name, title, link, budget)
+    return (f"{opening}\n{core}")[:160]
+
+
+def _fit_discovery_core(
+    category: str,
+    title: str,
+    creator_name: str,
+    reason: str,
+    link: str,
+    max_len: int,
+) -> str:
+    """Body only (no greeting). Drops reason line when needed; may truncate quoted title."""
+    head = f"Rec \u00b7 {category.title()}"
+    reason_line_full = reason.strip()
+
+    if reason_line_full:
+        msg_wr = f'{head}\n"{title}" by {creator_name}\n{reason_line_full}\n{link}'
+        if len(msg_wr) <= max_len:
+            return msg_wr
+
+    msg_nr = f'{head}\n"{title}" by {creator_name}\n{link}'
+    if len(msg_nr) <= max_len:
+        return msg_nr
+
+    prefix = head + "\n\""
+    suffix = f'" by {creator_name}\n{link}'
+    avail_for_title = max_len - len(prefix) - len(suffix) - 3
+    if avail_for_title > 0:
+        tt = title[:avail_for_title] + "..."
+        cand = prefix + tt + suffix
+        if len(cand) <= max_len:
+            return cand
+    return msg_nr[:max_len]
 
 
 def format_discovery_sms(
@@ -46,11 +126,13 @@ def format_discovery_sms(
     reason: str,
     link: str,
 ) -> str:
-    """Format a discovery rec SMS. Drops reason line if over 160 chars."""
-    msg = f"Rec \u00b7 {category.title()}\n\"{title}\" by {creator_name}\n{reason}\n{link}"
-    if len(msg) > 160:
-        msg = f"Rec \u00b7 {category.title()}\n\"{title}\" by {creator_name}\n{link}"
-    return msg[:160]
+    """Format a discovery rec SMS with a casual opener; drops reason line if tight on space."""
+    opening = _pick_sms_opening()
+    budget = 160 - len(opening) - 1  # newline between greeting and body
+    if budget <= 0:
+        return (opening[:160])[:160]
+    core = _fit_discovery_core(category, title, creator_name, reason, link, budget)
+    return (f"{opening}\n{core}")[:160]
 
 
 def _get_twilio_client() -> TwilioClient:
@@ -144,7 +226,7 @@ def flush_queue(dry_run: bool = False):
     session = session_factory()
 
     try:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         pending = (
             session.query(NotificationQueue)
             .filter(

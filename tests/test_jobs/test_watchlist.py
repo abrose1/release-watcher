@@ -217,3 +217,94 @@ class TestWatchlistJob:
         assert len(queue_items) == 1
         assert queue_items[0].priority == 10
         mock_send.assert_not_called()
+
+
+class TestMusicTierWatchlist:
+    """Tier 2 gets singles; Tier 3 music is skipped on the daily Spotify path."""
+
+    @pytest.fixture
+    def tier3_music_db(self):
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        session.add(
+            TrackedCreator(
+                category="music",
+                name="Deep Cut Act",
+                tier=3,
+                external_id="spotify_deep",
+                profile_score_at_sync=40.0,
+            )
+        )
+        session.commit()
+        yield Session, session
+        session.close()
+
+    @patch("watcher.jobs.watchlist.flush_queue")
+    @patch("watcher.jobs.watchlist.BraveSearchClient")
+    @patch("watcher.jobs.watchlist.BooksClient")
+    @patch("watcher.jobs.watchlist.TMDBClient")
+    @patch("watcher.jobs.watchlist.SpotifyClient")
+    @patch("watcher.jobs.watchlist.get_session_factory")
+    async def test_tier3_music_skips_spotify(
+        self, mock_factory, mock_spotify_cls, mock_tmdb_cls, mock_books_cls,
+        mock_brave_cls, mock_flush, tier3_music_db,
+    ):
+        Session, session = tier3_music_db
+        mock_factory.return_value = Session
+
+        mock_spotify = AsyncMock()
+        mock_spotify_cls.return_value = mock_spotify
+        mock_tmdb_cls.return_value = AsyncMock()
+        mock_books_cls.return_value = AsyncMock()
+        mock_brave_cls.return_value = AsyncMock()
+
+        from watcher.jobs.watchlist import run_scan
+        await run_scan(dry_run=False)
+
+        mock_spotify.get_artist_albums.assert_not_called()
+        mock_spotify.get_artist_new_singles.assert_not_called()
+
+    @patch("watcher.jobs.watchlist.flush_queue")
+    @patch("watcher.jobs.watchlist.judge_watchlist_hit")
+    @patch("watcher.jobs.watchlist.BraveSearchClient")
+    @patch("watcher.jobs.watchlist.BooksClient")
+    @patch("watcher.jobs.watchlist.TMDBClient")
+    @patch("watcher.jobs.watchlist.SpotifyClient")
+    @patch("watcher.jobs.watchlist.get_session_factory")
+    async def test_tier2_calls_singles_endpoint(
+        self, mock_factory, mock_spotify_cls, mock_tmdb_cls, mock_books_cls,
+        mock_brave_cls, mock_judge, mock_flush,
+    ):
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        session.add(
+            TrackedCreator(
+                category="music",
+                name="Tier Two Band",
+                tier=2,
+                external_id="spotify_t2",
+                profile_score_at_sync=70.0,
+            )
+        )
+        session.commit()
+
+        mock_factory.return_value = Session
+
+        mock_spotify = AsyncMock()
+        mock_spotify.get_artist_albums.return_value = []
+        mock_spotify.get_artist_new_singles.return_value = []
+        mock_spotify_cls.return_value = mock_spotify
+        mock_tmdb_cls.return_value = AsyncMock()
+        mock_books_cls.return_value = AsyncMock()
+        mock_brave_cls.return_value = AsyncMock()
+        mock_judge.return_value = JudgeResult(notify=False, reason="", best_link="")
+
+        from watcher.jobs.watchlist import run_scan
+        await run_scan(dry_run=False)
+
+        mock_spotify.get_artist_new_singles.assert_awaited_once()
+        session.close()

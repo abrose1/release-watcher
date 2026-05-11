@@ -1,6 +1,6 @@
 """Tests for SQLAlchemy models — schema correctness and FK constraints."""
 
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 
 from watcher.models import (
     TrackedCreator, Release, NotificationQueue, DiscoverySent,
@@ -106,8 +106,8 @@ class TestNotificationQueue:
         queue_item = NotificationQueue(
             release_id=release.id,
             message_text="Test message",
-            queued_at=datetime.utcnow(),
-            send_after=datetime.utcnow(),
+            queued_at=datetime.now(timezone.utc).replace(tzinfo=None),
+            send_after=datetime.now(timezone.utc).replace(tzinfo=None),
             priority=10,
         )
         db_session.add(queue_item)
@@ -124,7 +124,7 @@ class TestNotificationQueue:
             category="music",
             title="Discovery",
             creator_name="New Artist",
-            sent_at=datetime.utcnow(),
+            sent_at=datetime.now(timezone.utc).replace(tzinfo=None),
         )
         db_session.add(discovery)
         db_session.commit()
@@ -132,8 +132,8 @@ class TestNotificationQueue:
         queue_item = NotificationQueue(
             discovery_sent_id=discovery.id,
             message_text="Discovery message",
-            queued_at=datetime.utcnow(),
-            send_after=datetime.utcnow(),
+            queued_at=datetime.now(timezone.utc).replace(tzinfo=None),
+            send_after=datetime.now(timezone.utc).replace(tzinfo=None),
             priority=50,
         )
         db_session.add(queue_item)
@@ -151,7 +151,7 @@ class TestDiscoverySent:
             category="film",
             title="Test Movie",
             creator_name="Director",
-            sent_at=datetime.utcnow(),
+            sent_at=datetime.now(timezone.utc).replace(tzinfo=None),
         )
         db_session.add(discovery)
         db_session.commit()
@@ -190,7 +190,7 @@ class TestTierChange:
             tracked_creator_id=creator.id,
             old_tier=1,
             new_tier=2,
-            changed_at=datetime.utcnow(),
+            changed_at=datetime.now(timezone.utc).replace(tzinfo=None),
         )
         db_session.add(change)
         db_session.commit()

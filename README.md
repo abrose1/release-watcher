@@ -11,7 +11,7 @@ A scheduled agent that monitors new releases across books, music, TV, and movies
 ## How It Works
 
 1. **Daily scan** — Railway Cron checks each tracked creator for new releases via Spotify, TMDB, and Google Books APIs
-2. **Daily Tier 1 announcement scan** — Brave Search queries for each Tier 1 creator to catch announcements before they hit APIs
+2. **Daily Tier 1 announcement scan** — Brave Search for each Tier 1 creator (releases / seasons). *Stretch:* concerts or tours for Tier 1 music acts.
 3. **Weekly discovery** — finds new releases matching your taste profile across all four categories
 4. **Anthropic judge** — decides if each candidate is worth a notification based on taste fit, not review scores
 5. **Web search** — fires on every hit to find the best article/review link for the SMS
@@ -23,7 +23,11 @@ A scheduled agent that monitors new releases across books, music, TV, and movies
 
 The taste profile (author/artist scores derived from your bookshelf and Spotify history) lives in a separate repo with its own Postgres. This repo reads creator data from that DB via `TASTE_PROFILE_DATABASE_URL` — a **public** Railway Postgres URL, not the Railway internal hostname.
 
-The `sync_creators.py` script syncs creator data into this repo's local `tracked_creators` table. All scans run against the local copy — no live cross-project DB queries during job execution.
+The `sync_creators.py` script syncs creator data into this repo's Postgres `tracked_creators` table (on Railway in production). All scans run against that DB — no live cross-project DB queries during job execution.
+
+### Production default (Railway)
+
+Scheduled jobs and the DB the agent uses are on **Railway**. Treat laptop runs as dev unless you are intentionally targeting production: use **`DATABASE_PUBLIC_URL`** + `scripts/sync_creators_remote.py` for creator sync from your machine, deploy code after watcher changes, and keep **`TASTE_PROFILE_DATABASE_URL`** pointed at the **public** taste-profile Postgres URL. See `.cursor/rules/railway-production-default.mdc`.
 
 ---
 
@@ -32,10 +36,10 @@ The `sync_creators.py` script syncs creator data into this repo's local `tracked
 | Tier | Books / Music | TV | Movies |
 |------|--------------|-----|--------|
 | Tier 1 (top N by score) | Announce + Release | Announce + new season | Genre-based discovery only |
-| Tier 2 (mid-range) | Release only | New season only | Genre-based discovery only |
-| Discovery | Release only (taste fit scored by judge) | Similar series via TMDB | TMDB genre filter + judge |
+| Tier 2 (mid-range) | Release only (music: albums + singles on Spotify; no announce scan) | New season only | Genre-based discovery only |
+| Tier 3 / tail | Books: release notifications. **Music:** not polled on the daily Spotify watchlist until discovery-style flows exist (tiers still synced from taste-profile). | Similar series via TMDB | TMDB genre filter + judge |
 
-- Music: albums for all tiers; singles only for Tier 1
+- Music: Tier **1** and **2** — Spotify **albums + singles** on the daily scan; Tier **1** also gets the Brave **announcement** scan. Tier **3** music — **no** proactive album/single SMS from the daily scan (stretch: discovery picks worth notifying later).
 - Books: novels and novellas only (not collections or non-fiction from fiction authors by default)
 - TV: new seasons only, not individual episodes
 
@@ -133,9 +137,8 @@ See `.env.example` for the full list.
 |-----|-------------|
 | `DATABASE_URL` | This repo's Railway Postgres |
 | `TASTE_PROFILE_DATABASE_URL` | **Public** URL of taste-profile Railway Postgres |
-| `SPOTIFY_CLIENT_ID` | Same Spotify app as taste-profile |
+| `SPOTIFY_CLIENT_ID` | Same Spotify app as taste-profile (Client Credentials only — no refresh token needed here) |
 | `SPOTIFY_CLIENT_SECRET` | Same Spotify app as taste-profile |
-| `SPOTIFY_REFRESH_TOKEN` | Same token as taste-profile — used for Spotify rec discovery |
 | `TMDB_API_KEY` | Free at themoviedb.org |
 | `GOOGLE_BOOKS_API_KEY` | Free at console.cloud.google.com |
 | `BRAVE_SEARCH_API_KEY` | Free tier: 2000 queries/month |
@@ -157,7 +160,7 @@ release-watcher/
 │   │   ├── announcement.py    # Daily Tier 1 Brave Search scan
 │   │   └── discovery.py       # Weekly discovery
 │   ├── sources/
-│   │   ├── spotify.py         # Spotify client (client creds + refresh token)
+│   │   ├── spotify.py         # Spotify client (Client Credentials)
 │   │   ├── tmdb.py            # TMDB client
 │   │   ├── books.py           # Google Books client
 │   │   └── brave.py           # Brave Search client

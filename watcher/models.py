@@ -1,4 +1,4 @@
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import Optional
 
 from sqlalchemy import (
@@ -54,7 +54,7 @@ class NotificationQueue(Base):
     release_id = Column(Integer, ForeignKey("releases.id"), nullable=True)
     discovery_sent_id = Column(Integer, ForeignKey("discovery_sent.id"), nullable=True)
     message_text = Column(Text, nullable=False)
-    queued_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    queued_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     send_after = Column(DateTime, nullable=False)
     priority = Column(Integer, nullable=False, default=50)
     sent_at = Column(DateTime, nullable=True)
@@ -71,7 +71,7 @@ class DiscoverySent(Base):
     category = Column(String, nullable=False)
     title = Column(String, nullable=False)
     creator_name = Column(String, nullable=False)
-    sent_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    sent_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     queue_items = relationship("NotificationQueue", back_populates="discovery_sent")
 
@@ -94,6 +94,6 @@ class TierChange(Base):
     tracked_creator_id = Column(Integer, ForeignKey("tracked_creators.id"), nullable=True)
     old_tier = Column(Integer, nullable=True)
     new_tier = Column(Integer, nullable=True)
-    changed_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    changed_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     tracked_creator = relationship("TrackedCreator", back_populates="tier_changes")

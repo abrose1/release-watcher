@@ -51,15 +51,23 @@ MOCK_SPOTIFY_TOKEN_RESPONSE = {
     "expires_in": 3600,
 }
 
-MOCK_SPOTIFY_RECOMMENDATIONS = {
-    "tracks": [
+MOCK_SPOTIFY_PLAYLIST_RESPONSE = {
+    "items": [
         {
-            "id": "rec_track_1",
-            "name": "Recommended Song",
-            "artists": [{"name": "New Artist"}],
-            "album": {"id": "rec_album_1", "name": "Rec Album"},
-        }
-    ]
+            "item": {
+                "id": "track_1",
+                "name": "Song One",
+                "artists": [{"name": "Artist Alpha"}],
+            }
+        },
+        {
+            "item": {
+                "id": "track_2",
+                "name": "Song Two",
+                "artists": [{"name": "Artist Beta"}, {"name": "Artist Gamma"}],
+            }
+        },
+    ],
 }
 
 MOCK_TMDB_TV_RESPONSE = {

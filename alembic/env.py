@@ -1,10 +1,16 @@
 import os
 from logging.config import fileConfig
+from pathlib import Path
 
+from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
 from alembic import context
 
 from watcher.models import Base
+
+# Alembic is invoked as a standalone CLI; load the same `.env` as watcher jobs so
+# `DATABASE_URL` is not missing (otherwise `alembic.ini`'s sqlite fallback is used).
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 config = context.config
 

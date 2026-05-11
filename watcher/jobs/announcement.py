@@ -1,6 +1,11 @@
 """Daily Tier 1 announcement scan using Brave Search.
 
-Catches announcements before they hit APIs by searching for each Tier 1 creator.
+Catches release announcements before they hit APIs by searching for each Tier 1
+creator (books, music, TV).
+
+Stretch goal: extend this flow (or a sibling job) to surface **concerts / tour
+dates** for Tier 1 music acts — needs a reliable source + judge prompts tuned
+for tour vs album hype.
 """
 
 import argparse
@@ -8,7 +13,7 @@ import asyncio
 import hashlib
 import logging
 import sys
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 
 from watcher.config import get_preferences
 from watcher.db import get_session_factory
@@ -96,7 +101,7 @@ async def run_announcement_scan(dry_run: bool = False):
                         title=result.title,
                         type="announcement",
                         announced_date=date.today(),
-                        notified_announced_at=datetime.utcnow(),
+                        notified_announced_at=datetime.now(timezone.utc).replace(tzinfo=None),
                         source_url=link,
                         announcement_hash=ann_hash,
                     )
@@ -109,7 +114,7 @@ async def run_announcement_scan(dry_run: bool = False):
                             queue_item = NotificationQueue(
                                 release_id=release.id,
                                 message_text=sms_text,
-                                queued_at=datetime.utcnow(),
+                                queued_at=datetime.now(timezone.utc).replace(tzinfo=None),
                                 send_after=next_send_after(),
                                 priority=10,
                             )

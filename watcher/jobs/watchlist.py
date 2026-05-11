@@ -7,7 +7,7 @@ import argparse
 import asyncio
 import logging
 import sys
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 
 from watcher.db import get_session_factory
 from watcher.models import TrackedCreator, Release, NotificationQueue, UserOverride
@@ -25,12 +25,16 @@ logger = logging.getLogger(__name__)
 
 
 async def check_music_creator(creator: TrackedCreator, spotify: SpotifyClient, after_date: date):
-    """Check for new releases from a music creator."""
+    """Check for new releases from a music creator.
+
+    Tier 1 and Tier 2 both poll albums and singles. Tier 3 is skipped in the
+    daily scan until discovery-style flows exist (see ``run_scan``).
+    """
     if not creator.external_id:
         return []
 
     releases = await spotify.get_artist_albums(creator.external_id, after_date)
-    if creator.tier == 1:
+    if creator.tier in (1, 2):
         singles = await spotify.get_artist_new_singles(creator.external_id, after_date)
         releases.extend(singles)
 
@@ -101,7 +105,7 @@ async def run_scan(dry_run: bool = False):
             .filter(UserOverride.action == "mute")
             .filter(
                 (UserOverride.expires_at.is_(None)) |
-                (UserOverride.expires_at > datetime.utcnow())
+                (UserOverride.expires_at > datetime.now(timezone.utc).replace(tzinfo=None))
             )
             .all()
         }
@@ -115,6 +119,9 @@ async def run_scan(dry_run: bool = False):
 
         for creator in creators:
             if creator.category == "music":
+                # Tier 3: taste-profile tail — no proactive album/single SMS until discovery is wired.
+                if creator.tier >= 3:
+                    continue
                 releases = await check_music_creator(creator, spotify, after_date)
             elif creator.category == "tv":
                 releases = await check_tv_creator(creator, tmdb, after_date)
@@ -160,7 +167,7 @@ async def run_scan(dry_run: bool = False):
                         title=release_data["title"],
                         type=release_data["type"],
                         release_date=date.fromisoformat(release_data["date"]) if release_data.get("date") else None,
-                        notified_released_at=datetime.utcnow(),
+                        notified_released_at=datetime.now(timezone.utc).replace(tzinfo=None),
                         source_url=link,
                     )
 
@@ -172,7 +179,7 @@ async def run_scan(dry_run: bool = False):
                             queue_item = NotificationQueue(
                                 release_id=release.id,
                                 message_text=sms_text,
-                                queued_at=datetime.utcnow(),
+                                queued_at=datetime.now(timezone.utc).replace(tzinfo=None),
                                 send_after=next_send_after(),
                                 priority=10 if creator.tier == 1 else 30,
                             )

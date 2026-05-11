@@ -81,3 +81,8 @@ class BraveSearchClient:
         """Search for books similar to an author's work."""
         query = f"books similar to {author_name} 2025 2026"
         return await self.search(query)
+
+    async def search_similar_music(self, artist_name: str) -> list[SearchResult]:
+        """Search for new music from artists similar to the given artist."""
+        query = f"new music artists similar to {artist_name} 2025 2026"
+        return await self.search(query)

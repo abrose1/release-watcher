@@ -30,6 +30,12 @@ def get_preferences() -> dict[str, Any]:
     return get_config().get("preferences", {})
 
 
+def get_sms_first_name() -> str | None:
+    raw = get_preferences().get("sms_first_name") or ""
+    stripped = str(raw).strip()
+    return stripped or None
+
+
 def get_quiet_hours_config() -> dict[str, Any]:
     return get_preferences().get("quiet_hours", {})
 
@@ -45,6 +51,10 @@ def get_film_taste() -> str:
 
 def get_film_genre_ids() -> list[int]:
     return get_preferences().get("film_tmdb_genre_ids", [])
+
+
+def get_spotify_seed_playlist_ids() -> list[str]:
+    return get_preferences().get("spotify_seed_playlist_ids", [])
 
 
 def get_env(name: str, required: bool = True) -> str | None:

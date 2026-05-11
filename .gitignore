@@ -1,4 +1,6 @@
 .env
+.DS_Store
+.watcher_local.db
 __pycache__/
 *.pyc
 *.pyo

@@ -1,59 +1,62 @@
 ---
+
 name: Release Watcher Agent
 overview: A scheduled cloud agent that monitors new releases across books, music, TV, and movies - driven by a reusable personal taste profile built from your ranked bookshelf and Spotify listening data. Texts you via Twilio with real article/review links via web search. The taste profile lives in its own separate repo/Postgres and is portable to future projects.
 todos:
-  - id: taste-profile-repo
-    content: Scaffold taste-profile repo with Railway Postgres, SQLAlchemy models, Alembic migrations
-    status: pending
-  - id: book-intake
-    content: "Build book intake script: process ranked series list → weighted author scores in taste profile DB"
-    status: pending
-  - id: spotify-intake
-    content: "Build Spotify intake script: user OAuth + top artists/tracks/followed artists → weighted artist scores"
-    status: pending
-  - id: profile-export
-    content: Build JSON export from taste profile DB for portability to future projects
-    status: pending
-  - id: scaffold-watcher
-    content: "Scaffold release-watcher repo: Railway Cron entry points, requirements.txt, config.yaml"
-    status: pending
-  - id: db-watcher
-    content: "Set up watcher Postgres schema: tracked_creators, releases, notification_queue, discovery_sent, user_overrides, tier_changes"
-    status: pending
-  - id: sources
-    content: Build Spotify (client credentials), TMDB, Google Books, and Brave Search API clients
-    status: pending
-  - id: watchlist-job
-    content: "Build daily watchlist job: reads creators from watcher DB (synced from taste profile), checks APIs, web search, judge"
-    status: pending
-  - id: tier1-announcement-job
-    content: Build Tier 1 announcement scan using Brave Search for each Tier 1 creator
-    status: pending
-  - id: judge
-    content: "Build Anthropic judge: release validation, taste-fit discovery scoring, best link extraction"
-    status: pending
-  - id: notify
-    content: Build Twilio SMS sender with formatted messages, quiet hours, and error alerting
-    status: pending
-  - id: discovery-job
-    content: "Build weekly discovery job: Spotify recs (music), TMDB genre filter (film), TMDB similar series (TV), Brave Search (books), judge scores by taste fit"
-    status: pending
-  - id: sync-creators
-    content: "Build creator sync script: reads taste profile DB, applies tier thresholds, upserts tracked_creators, detects tier changes"
-    status: pending
-  - id: notification-queue
-    content: "Build notification queue: quiet hours gating, batch flush at 08:00, priority ordering, 160-char SMS truncation"
-    status: pending
-  - id: readmes
-    content: Write README.md and .env.example for both repos
-    status: pending
-  - id: deploy
-    content: "Deploy: taste-profile (Postgres + monthly Spotify cron), watcher (Postgres + daily scan + weekly discovery + weekly creator sync crons)"
-    status: pending
-  - id: sms-webhook
-    content: "Stretch: Railway Web service for inbound SMS - parses reply, updates taste profile scores + watcher overrides"
-    status: pending
+
+- id: taste-profile-repo
+content: Scaffold taste-profile repo with Railway Postgres, SQLAlchemy models, Alembic migrations
+status: pending
+- id: book-intake
+content: "Build book intake script: process ranked series list → weighted author scores in taste profile DB"
+status: pending
+- id: spotify-intake
+content: "Build Spotify intake script: user OAuth + top artists/tracks/followed artists → weighted artist scores"
+status: pending
+- id: profile-export
+content: Build JSON export from taste profile DB for portability to future projects
+status: pending
+- id: scaffold-watcher
+content: "Scaffold release-watcher repo: Railway Cron entry points, requirements.txt, config.yaml"
+status: pending
+- id: db-watcher
+content: "Set up watcher Postgres schema: tracked_creators, releases, notification_queue, discovery_sent, user_overrides, tier_changes"
+status: pending
+- id: sources
+content: Build Spotify (client credentials), TMDB, Google Books, and Brave Search API clients
+status: pending
+- id: watchlist-job
+content: "Build daily watchlist job: reads creators from watcher DB (synced from taste profile), checks APIs, web search, judge"
+status: pending
+- id: tier1-announcement-job
+content: Build Tier 1 announcement scan using Brave Search for each Tier 1 creator
+status: pending
+- id: judge
+content: "Build Anthropic judge: release validation, taste-fit discovery scoring, best link extraction"
+status: pending
+- id: notify
+content: Build Twilio SMS sender with formatted messages, quiet hours, and error alerting
+status: pending
+- id: discovery-job
+content: "Build weekly discovery job: Spotify recs (music), TMDB genre filter (film), TMDB similar series (TV), Brave Search (books), judge scores by taste fit"
+status: pending
+- id: sync-creators
+content: "Build creator sync script: reads taste profile DB, applies tier thresholds, upserts tracked_creators, detects tier changes"
+status: pending
+- id: notification-queue
+content: "Build notification queue: quiet hours gating, batch flush at 08:00, priority ordering, 160-char SMS truncation"
+status: pending
+- id: readmes
+content: Write README.md and .env.example for both repos
+status: pending
+- id: deploy
+content: "Deploy: taste-profile (Postgres + monthly Spotify cron), watcher (Postgres + daily scan + weekly discovery + weekly creator sync crons)"
+status: pending
+- id: sms-webhook
+content: "Stretch: Railway Web service for inbound SMS - parses reply, updates taste profile scores + watcher overrides"
+status: pending
 isProject: false
+
 ---
 
 # Release Watcher Agent
@@ -129,7 +132,7 @@ flowchart TD
 ### Data Inputs
 
 - **Books:** Ranked series list you provide (CSV or plain text). Authors with multiple series on the list get compounding score. Rank position is the primary weight. Intake script resolves author name → Google Books author ID for the watcher to use.
-- **Music:** Spotify user OAuth (scope: `user-top-read`, `user-follow-read`, `user-library-read`, `user-read-recently-played`) → top artists across short/medium/long term windows, followed artists. Time-weighted listen score. Re-run monthly or on demand. The OAuth refresh token is stored in a Railway env var (`SPOTIFY_REFRESH_TOKEN`) so monthly re-syncs run unattended without repeating the browser-based auth flow.
+- **Music:** Three user-owned Spotify "Top Songs YYYY" playlists (configured in `intake/playlists.py`) are the **canonical music taste source**. They are read via user OAuth (`playlist-read-private`, `playlist-read-collaborative`) and written to `playlist_intake_log` (immutable, write-once per `source_label`). The `music_artists` table remains part of the taste profile for per-artist scores used by export and downstream sync; **no intake script populates it yet** — that roll-up from `playlist_intake_log` is TODO. Do not use `/me/top/artists`, `/me/top/tracks`, or `/me/following`. Spotify's auto-generated `37i9dQZF*` Wrapped playlists are not a viable API source for many third-party apps (Nov 2024 policy); mirror each year into a user-owned playlist instead. Store `SPOTIFY_REFRESH_TOKEN` in Railway for unattended cron re-imports.
 - **Film:** No structured data - qualitative genre/style descriptions captured in `config.yaml` in the release-watcher repo, fed directly to the Anthropic judge as a taste description string.
 - **TV:** Manually specified in `config.yaml` with tier assignments.
 
@@ -151,7 +154,8 @@ Tier assignment is derived from score at sync time, not stored in the taste prof
 ### Taste Profile Schema
 
 - `book_authors` — id, name, rank_score, series_count, inferred_genres, google_books_id
-- `music_artists` — id, name, spotify_id, listen_score, genres
+- `playlist_intake_log` — id, track_name, primary_artist, all_artists, track_id, playlist_position, total_in_playlist, source_label, playlist_id, intake_at (immutable; one row per imported track per playlist; **canonical raw music source**)
+- `music_artists` — id, name, spotify_id, listen_score, genres (part of the taste profile for export/sync; populate manually or via a future aggregation from `playlist_intake_log` — not written by current intake)
 - `score_history` — id, category, creator_id, old_score, new_score, source (sms/manual/spotify_sync/book_intake), note, created_at
 - `profile_metadata` — last_spotify_sync, last_book_intake, tier1_book_cutoff, tier1_music_cutoff, tier2_book_cutoff, tier2_music_cutoff, schema_version
 
@@ -164,13 +168,13 @@ Tier assignment is derived from score at sync time, not stored in the taste prof
 ### Key Files
 
 - `intake/books.py` — ranked series list → scored authors
-- `intake/spotify.py` — user OAuth flow (first run), then refresh-token re-sync (monthly cron); stores `SPOTIFY_REFRESH_TOKEN` to stdout on first run for you to paste into Railway env vars
+- `intake/playlists.py` — user OAuth flow (first run), then refresh-token re-imports (monthly cron); ingests three configured user-owned playlists into `playlist_intake_log`. Prints `SPOTIFY_REFRESH_TOKEN` on first run for Railway env vars. (TODO: optional step to roll playlist rows into `music_artists`.)
 - `export/profile_export.py` — DB → `taste_profile.json`
 - `models.py` — SQLAlchemy models
 - `alembic/` — migrations
-- `.env.example` — documents all required env vars including both Spotify app credentials and refresh token
+- `.env.example` — documents all required env vars including Spotify app credentials and refresh token
 - `README.md` — intake instructions, OAuth setup, how to add creators manually, how to export
-- `railway.toml` — Postgres + monthly Spotify re-sync Cron
+- `railway.toml` — Postgres + monthly playlist re-import Cron
 
 ## Part 2: Release Watcher Repo
 
@@ -224,7 +228,7 @@ Sync runs on its own Railway Cron schedule (weekly), not on every daily scan sta
 ### Data Sources
 
 - **Music releases:** Spotify API with client credentials (public artist album data — no user OAuth needed for this)
-- **Music discovery:** Spotify recommendations API requires user auth. The refresh token stored from intake (`SPOTIFY_REFRESH_TOKEN`) is used here to obtain a fresh access token at discovery job runtime. The discovery job calls `/recommendations` with seed artists from the top of the taste profile.
+- **Music discovery:** Discovery seeds from public, user-owned playlists configured under `spotify_seed_playlist_ids` in `config.yaml`, fetched via `/playlists/{id}/items` (note: not `/tracks`, which 403s) using the same Client Credentials auth as music releases. Artist names from those playlists feed into Brave Search + the LLM judge. Spotify deprecated `/recommendations`, audio-features, audio-analysis, related-artists, and access to its auto-generated `37i9dQZF`* Wrapped/editorial playlists for new third-party apps in Nov 2024. 
 - **TV + Movies:** TMDB API (free; TV on the air, upcoming movies, genre filter for discovery)
 - **Books:** Google Books API (search by author ID sorted by newest)
 - **Web search:** Brave Search API for article links, announcement detection, and discovery context
@@ -303,6 +307,7 @@ If a cron job throws an unhandled exception:
 SMS messages are kept under 160 characters to avoid multi-part splitting where possible. The title and creator are truncated if needed; the link is always preserved since it's the primary value of the message.
 
 Watchlist hit:
+
 ```
 New Album · [Artist]
 "[Title]" — released today
@@ -310,6 +315,7 @@ New Album · [Artist]
 ```
 
 Discovery rec:
+
 ```
 Rec · [Category]
 "[Title]" by [Creator]
@@ -318,6 +324,7 @@ Rec · [Category]
 ```
 
 Error:
+
 ```
 [Watcher] Daily scan failed — check Railway logs
 ```
@@ -328,9 +335,9 @@ If a message would exceed 160 characters, the reason line is dropped first, then
 
 - `watcher/jobs/watchlist.py` — daily scan against tracked_creators
 - `watcher/jobs/announcement.py` — daily Tier 1 Brave Search announcement scan
-- `watcher/jobs/discovery.py` — weekly discovery job; uses stored refresh token for Spotify recs
+- `watcher/jobs/discovery.py` — weekly discovery job; playlist seeds via Client Credentials
 - `watcher/sync_creators.py` — syncs creators from taste profile DB into watcher DB (weekly cron + on-demand)
-- `watcher/sources/spotify.py` — Spotify client; handles both client credentials (releases) and refresh-token auth (discovery recs)
+- `watcher/sources/spotify.py` — Spotify client (Client Credentials for releases and public playlist reads)
 - `watcher/sources/tmdb.py` — TMDB client
 - `watcher/sources/books.py` — Google Books client
 - `watcher/sources/brave.py` — Brave Search client
@@ -344,7 +351,7 @@ If a message would exceed 160 characters, the reason line is dropped first, then
 
 ## Deployment (all Railway)
 
-- **taste-profile:** Railway Postgres + Railway Cron for monthly Spotify re-sync
+- **taste-profile:** Railway Postgres + Railway Cron for monthly playlist re-import
 - **release-watcher:** Railway Postgres + two Railway Cron services (daily scan, weekly discovery) + Railway Web service for SMS webhook (stretch only)
 - Both repos are **separate Railway projects** — separate Postgres instances, separate env var sets, no shared internal networking
 - Watcher connects to taste profile Postgres via its **public** connection URL (`TASTE_PROFILE_DATABASE_URL` env var). Use the Railway-provided public Postgres URL, not the internal `postgres.railway.internal` hostname (which only resolves within the same Railway project). Ensure a strong Postgres password on the taste profile DB since it's publicly reachable.
@@ -355,9 +362,9 @@ Order matters — the watcher cannot run meaningfully until the taste profile is
 
 1. Set up `taste-profile` repo — run migrations, deploy Railway Postgres
 2. Run `intake/books.py` locally with your ranked series CSV
-3. Run `intake/spotify.py` locally — complete the browser OAuth flow, copy the printed refresh token into Railway env vars as `SPOTIFY_REFRESH_TOKEN`
-4. Set tier thresholds in `profile_metadata` (direct DB edit or a small setup script)
-5. Verify taste profile DB has data — check row counts in `book_authors` and `music_artists`
+3. Run `intake/playlists.py --auth` locally — complete the browser OAuth flow, copy the printed refresh token into Railway env vars as `SPOTIFY_REFRESH_TOKEN`. Then run `intake/playlists.py` to import all three configured playlists into `playlist_intake_log`. (Populating `music_artists` from that log is a separate future step.)
+4. Set tier thresholds in `profile_metadata` for books; set music tier cutoffs when `music_artists` has rows.
+5. Verify taste profile DB has data — check row counts in `book_authors` and `playlist_intake_log` (and `music_artists` if populated manually or by a future aggregation)
 6. Set up `release-watcher` repo — run migrations, deploy Railway Postgres
 7. Fill in `config.yaml`: write `film_taste` description, set `film_tmdb_genre_ids`, fill TV shows with tiers, set `quiet_hours.timezone`
 8. Run `sync_creators.py` locally against both DBs — verify `tracked_creators` is populated
@@ -383,7 +390,7 @@ taste-profile:
 release-watcher:
 
 - `DATABASE_URL`, `TASTE_PROFILE_DATABASE_URL` (public URL of taste-profile Postgres)
-- `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `SPOTIFY_REFRESH_TOKEN` (same app, same token)
+- `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` (same app as taste-profile; release-watcher uses Client Credentials only — no refresh token here)
 - `TMDB_API_KEY`, `GOOGLE_BOOKS_API_KEY`, `BRAVE_SEARCH_API_KEY`
 - `ANTHROPIC_API_KEY`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`, `YOUR_PHONE_NUMBER`
 
@@ -393,7 +400,7 @@ Several tasks in this project are well-suited for kicking off a Cursor cloud age
 
 - **After writing an API client** (Spotify, TMDB, Books, Brave): prompt a cloud agent to write the unit tests against that module
 - **After writing `judge.py`**: prompt a cloud agent to write edge-case tests for each judge call type (remaster detection, announcement vs. rumor, discovery taste-fit reasoning)
-- **After writing the intake scripts**: prompt a cloud agent to review `intake/books.py` and `intake/spotify.py` for edge cases in score calculation
+- **After writing the intake scripts**: prompt a cloud agent to review `intake/books.py` and `intake/playlists.py` for edge cases in score calculation and pagination
 - **Any time a cron job produces unexpected output**: paste the Railway log into a cloud agent and ask it to diagnose and open a fix PR
 
 These are all small, repo-scoped, code-output tasks — exactly the shape cloud agents are designed for.

@@ -1,5 +1,7 @@
-"""Spotify API client supporting both client credentials and refresh token auth."""
+"""Spotify API client using Client Credentials flow."""
 
+import asyncio
+import time
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -24,35 +26,44 @@ class Album:
 
 
 @dataclass
-class Track:
+class PlaylistTrack:
     id: str
     name: str
-    artists: list[dict[str, str]]
-    album: dict[str, Any]
+    artists: list[str]  # artist names
 
 
 class SpotifyClient:
-    """Spotify API client with client credentials and refresh token auth modes."""
+    """Spotify API client using Client Credentials (machine-to-machine) auth.
+
+    Suitable for all public endpoints (artist albums, singles, search).
+    Does not require a refresh token or user authorization.
+    """
 
     BASE_URL = "https://api.spotify.com/v1"
     TOKEN_URL = "https://accounts.spotify.com/api/token"
     MAX_RETRIES = 3
+    # Re-fetch token this many seconds before it actually expires
+    _TOKEN_EXPIRY_BUFFER = 60
 
     def __init__(
         self,
         client_id: str | None = None,
         client_secret: str | None = None,
-        refresh_token: str | None = None,
     ):
         self.client_id = client_id or get_env("SPOTIFY_CLIENT_ID")
         self.client_secret = client_secret or get_env("SPOTIFY_CLIENT_SECRET")
-        self.refresh_token = refresh_token or get_env("SPOTIFY_REFRESH_TOKEN", required=False)
-        self._client_credentials_token: str | None = None
-        self._user_access_token: str | None = None
+        self._access_token: str | None = None
+        self._token_expires_at: float = 0.0
 
-    async def _get_client_credentials_token(self) -> str:
-        if self._client_credentials_token:
-            return self._client_credentials_token
+    def _token_is_valid(self) -> bool:
+        return (
+            self._access_token is not None
+            and time.monotonic() < self._token_expires_at - self._TOKEN_EXPIRY_BUFFER
+        )
+
+    async def _get_token(self) -> str:
+        if self._token_is_valid():
+            return self._access_token
 
         async with httpx.AsyncClient() as client:
             resp = await client.post(
@@ -61,59 +72,42 @@ class SpotifyClient:
                 auth=(self.client_id, self.client_secret),
             )
             if resp.status_code != 200:
-                raise SpotifyError(f"Failed to get client credentials token: {resp.status_code}")
-            self._client_credentials_token = resp.json()["access_token"]
-            return self._client_credentials_token
+                raise SpotifyError(
+                    f"Failed to get access token: {resp.status_code} {resp.text}"
+                )
+            body = resp.json()
+            self._access_token = body["access_token"]
+            self._token_expires_at = time.monotonic() + body.get("expires_in", 3600)
+            return self._access_token
 
-    async def refresh_access_token(self, refresh_token: str | None = None) -> str:
-        """Get a fresh access token using the refresh token."""
-        token = refresh_token or self.refresh_token
-        if not token:
-            raise SpotifyError("No refresh token available")
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                self.TOKEN_URL,
-                data={
-                    "grant_type": "refresh_token",
-                    "refresh_token": token,
-                },
-                auth=(self.client_id, self.client_secret),
-            )
-            if resp.status_code != 200:
-                raise SpotifyError(f"Failed to refresh access token: {resp.status_code}")
-            self._user_access_token = resp.json()["access_token"]
-            return self._user_access_token
-
-    async def _request(self, path: str, use_user_auth: bool = False, params: dict | None = None) -> Any:
-        """Make an authenticated request with retry logic."""
-        if use_user_auth:
-            if not self._user_access_token:
-                await self.refresh_access_token()
-            token = self._user_access_token
-        else:
-            token = await self._get_client_credentials_token()
-
+    async def _request(self, path: str, params: dict | None = None) -> Any:
+        """Make an authenticated GET request with retry on rate-limit."""
         for attempt in range(self.MAX_RETRIES):
+            token = await self._get_token()
             async with httpx.AsyncClient() as client:
                 resp = await client.get(
                     f"{self.BASE_URL}{path}",
                     headers={"Authorization": f"Bearer {token}"},
                     params=params,
                 )
+                if resp.status_code == 401:
+                    # Force token refresh on next attempt
+                    self._access_token = None
+                    continue
                 if resp.status_code == 429:
                     retry_after = int(resp.headers.get("Retry-After", 2 ** attempt))
-                    import asyncio
                     await asyncio.sleep(retry_after)
                     continue
                 if resp.status_code != 200:
-                    raise SpotifyError(f"Spotify API error {resp.status_code}: {resp.text}")
+                    raise SpotifyError(
+                        f"Spotify API error {resp.status_code}: {resp.text}"
+                    )
                 return resp.json()
 
         raise SpotifyError("Max retries exceeded")
 
     async def get_artist_albums(self, spotify_id: str, after_date: date) -> list[Album]:
-        """Get albums by an artist released after the given date."""
+        """Get albums by an artist released on or after the given date."""
         data = await self._request(
             f"/artists/{spotify_id}/albums",
             params={"include_groups": "album", "limit": 50, "market": "US"},
@@ -132,7 +126,7 @@ class SpotifyClient:
         return albums
 
     async def get_artist_new_singles(self, spotify_id: str, after_date: date) -> list[Album]:
-        """Get singles by an artist released after the given date (Tier 1 only)."""
+        """Get singles by an artist released on or after the given date (Tier 1 only)."""
         data = await self._request(
             f"/artists/{spotify_id}/albums",
             params={"include_groups": "single", "limit": 50, "market": "US"},
@@ -150,19 +144,46 @@ class SpotifyClient:
                 ))
         return singles
 
-    async def get_recommendations(self, seed_artist_ids: list[str], limit: int = 20) -> list[Track]:
-        """Get recommendations based on seed artists (requires user auth)."""
-        data = await self._request(
-            "/recommendations",
-            use_user_auth=True,
-            params={"seed_artists": ",".join(seed_artist_ids[:5]), "limit": limit},
-        )
-        tracks = []
-        for item in data.get("tracks", []):
-            tracks.append(Track(
-                id=item["id"],
-                name=item["name"],
-                artists=[{"name": a["name"]} for a in item.get("artists", [])],
-                album=item.get("album", {}),
-            ))
+    async def get_playlist_tracks(self, playlist_id: str) -> list[PlaylistTrack]:
+        """Fetch all tracks from a public playlist via the /items endpoint.
+
+        Uses Client Credentials. Should work for public user-owned playlists;
+        will not work for Spotify's algorithmic / editorial playlists (the
+        `37i9dQZF*` namespace), which became inaccessible to new third-party
+        Web API apps as of Nov 2024.
+
+        Uses explicit `offset`-based pagination — the `next` link returned by
+        `/playlists/{id}/items` does not advance the offset on Spotify's current
+        API and will infinitely repeat page 1 if followed. Each entry uses an
+        `item` wrapper (not the legacy `track` wrapper from `/tracks`).
+        """
+        tracks: list[PlaylistTrack] = []
+        offset = 0
+        limit = 100
+
+        while True:
+            data = await self._request(
+                f"/playlists/{playlist_id}/items",
+                params={
+                    "limit": limit,
+                    "offset": offset,
+                    "fields": "items(item(id,name,artists))",
+                },
+            )
+            page = data.get("items", [])
+            if not page:
+                break
+            for entry in page:
+                track = entry.get("item")
+                if not track or not track.get("id"):
+                    continue
+                tracks.append(PlaylistTrack(
+                    id=track["id"],
+                    name=track.get("name", ""),
+                    artists=[a["name"] for a in track.get("artists", []) if a.get("name")],
+                ))
+            if len(page) < limit:
+                break
+            offset += limit
+
         return tracks
