@@ -160,6 +160,7 @@ See `.env.example` for the full list.
 | `ANTHROPIC_API_KEY` | Already have |
 | `TWILIO_ACCOUNT_SID` | Twilio console |
 | `TWILIO_AUTH_TOKEN` | Twilio console |
+| `TWILIO_MESSAGING_SERVICE_SID` | Preferred for A2P 10DLC; when set, SMS sends via Messaging Service instead of raw `from_` |
 | `TWILIO_FROM_NUMBER` | Your Twilio phone number |
 | `YOUR_PHONE_NUMBER` | Your personal number to receive SMS |
 

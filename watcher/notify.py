@@ -149,11 +149,19 @@ def send_sms(message_text: str, dry_run: bool = False):
         return
 
     client = _get_twilio_client()
-    client.messages.create(
-        body=message_text,
-        from_=get_env("TWILIO_FROM_NUMBER"),
-        to=get_env("YOUR_PHONE_NUMBER"),
-    )
+    to_number = get_env("YOUR_PHONE_NUMBER")
+    messaging_service_sid = get_env("TWILIO_MESSAGING_SERVICE_SID", required=False)
+
+    payload = {
+        "body": message_text,
+        "to": to_number,
+    }
+    if messaging_service_sid:
+        payload["messaging_service_sid"] = messaging_service_sid
+    else:
+        payload["from_"] = get_env("TWILIO_FROM_NUMBER")
+
+    client.messages.create(**payload)
     logger.info(f"SMS sent: {message_text[:50]}...")
 
 

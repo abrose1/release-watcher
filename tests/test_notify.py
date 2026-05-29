@@ -257,16 +257,57 @@ class TestSendSMS:
     @patch("watcher.notify._get_twilio_client")
     @patch("watcher.notify.get_env")
     def test_send_sms_calls_twilio(self, mock_env, mock_twilio):
-        mock_env.side_effect = lambda name: {
-            "TWILIO_FROM_NUMBER": "+1111111111",
-            "YOUR_PHONE_NUMBER": "+2222222222",
-        }[name]
+        def env_side_effect(name, required=True):
+            values = {
+                "TWILIO_FROM_NUMBER": "+1111111111",
+                "YOUR_PHONE_NUMBER": "+2222222222",
+                "TWILIO_MESSAGING_SERVICE_SID": None,
+            }
+            if name in values:
+                return values[name]
+            if required:
+                raise KeyError(name)
+            return None
+
+        mock_env.side_effect = env_side_effect
         mock_client = MagicMock()
         mock_twilio.return_value = mock_client
 
         send_sms("Hello", dry_run=False)
 
-        mock_client.messages.create.assert_called_once()
+        mock_client.messages.create.assert_called_once_with(
+            body="Hello",
+            from_="+1111111111",
+            to="+2222222222",
+        )
+
+    @patch("watcher.notify._get_twilio_client")
+    @patch("watcher.notify.get_env")
+    def test_send_sms_prefers_messaging_service(self, mock_env, mock_twilio):
+        def env_side_effect(name, required=True):
+            values = {
+                "YOUR_PHONE_NUMBER": "+2222222222",
+                "TWILIO_MESSAGING_SERVICE_SID": "MG123",
+            }
+            if name in values:
+                return values[name]
+            if name == "TWILIO_FROM_NUMBER" and not required:
+                return None
+            if required:
+                raise KeyError(name)
+            return None
+
+        mock_env.side_effect = env_side_effect
+        mock_client = MagicMock()
+        mock_twilio.return_value = mock_client
+
+        send_sms("Hello", dry_run=False)
+
+        mock_client.messages.create.assert_called_once_with(
+            body="Hello",
+            messaging_service_sid="MG123",
+            to="+2222222222",
+        )
 
     def test_send_sms_dry_run_no_twilio(self):
         send_sms("Hello", dry_run=True)

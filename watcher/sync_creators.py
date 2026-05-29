@@ -60,7 +60,7 @@ def _resolve_music_tier_cutoffs(meta_row: Mapping[str, object] | None) -> tuple[
     """Return (tier1_top_n, tier2_top_n) for ``music_artists`` ordering.
 
     Uses ``tier1_music_cutoff`` / ``tier2_music_cutoff`` from ``profile_metadata``.
-    Missing values default to tier1=10, tier2=max(tier1+20, 30) with a warning.
+    Missing values default to tier1=8, tier2=25 with a warning.
     """
     t1: int | None = None
     t2: int | None = None
@@ -72,9 +72,9 @@ def _resolve_music_tier_cutoffs(meta_row: Mapping[str, object] | None) -> tuple[
 
     used_default = t1 is None or t2 is None
     if t1 is None:
-        t1 = 10
+        t1 = 8
     if t2 is None:
-        t2 = max(t1 + 20, 30)
+        t2 = 25
     if t2 < t1:
         logger.warning(
             "tier2_music_cutoff (%s) < tier1_music_cutoff (%s); clamping tier2 to tier1",
