@@ -19,7 +19,7 @@ from watcher.config import get_preferences
 from watcher.db import get_session_factory
 from watcher.models import TrackedCreator, Release, NotificationQueue
 from watcher.notify import (
-    format_watchlist_sms, send_sms, send_error_sms,
+    format_watchlist_message, send_whatsapp, send_error_whatsapp,
     is_quiet_hours, next_send_after,
 )
 from watcher.sources.brave import BraveSearchClient
@@ -87,7 +87,7 @@ async def run_announcement_scan(dry_run: bool = False):
 
                 if judge_result.notify:
                     link = judge_result.best_link or result.url
-                    sms_text = format_watchlist_sms(
+                    message_text = format_watchlist_message(
                         creator_name=creator.name,
                         category=creator.category,
                         title=result.title,
@@ -113,18 +113,18 @@ async def run_announcement_scan(dry_run: bool = False):
                         if is_quiet_hours():
                             queue_item = NotificationQueue(
                                 release_id=release.id,
-                                message_text=sms_text,
+                                message_text=message_text,
                                 queued_at=datetime.now(timezone.utc).replace(tzinfo=None),
                                 send_after=next_send_after(),
                                 priority=10,
                             )
                             session.add(queue_item)
                         else:
-                            send_sms(sms_text, dry_run=dry_run)
+                            send_whatsapp(message_text, dry_run=dry_run)
 
                         notifications_sent += 1
                     else:
-                        logger.info(f"[DRY RUN] Would notify: {sms_text}")
+                        logger.info(f"[DRY RUN] Would notify: {message_text}")
                         notifications_sent += 1
 
                     break
@@ -156,7 +156,7 @@ def main():
     except Exception as e:
         logging.exception(f"Job failed: {e}")
         if not args.dry_run:
-            send_error_sms("announcement-scan")
+            send_error_whatsapp("announcement-scan")
         sys.exit(1)
 
 

@@ -7,8 +7,8 @@ import pytest
 from freezegun import freeze_time
 
 from watcher.notify import (
-    format_watchlist_sms, format_discovery_sms,
-    is_quiet_hours, next_send_after, flush_queue, send_sms,
+    format_watchlist_message, format_discovery_message,
+    is_quiet_hours, next_send_after, flush_queue, send_whatsapp,
 )
 from watcher.models import NotificationQueue, Base
 
@@ -16,62 +16,22 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 
-@pytest.fixture(autouse=True)
-def _fixed_sms_opening(monkeypatch):
-    """Deterministic greetings; production uses varied openers."""
-    monkeypatch.setattr("watcher.notify._pick_sms_opening", lambda: "Hey,")
-
-
-class TestFormatWatchlistSMS:
+class TestFormatWatchlistMessage:
     def test_basic_format(self):
-        msg = format_watchlist_sms(
+        msg = format_watchlist_message(
             creator_name="Artist",
             category="music",
             title="Album Title",
             release_type="album",
             link="https://example.com",
         )
-        assert msg.startswith("Hey,\n")
         assert "New Album" in msg
         assert "Artist" in msg
         assert "Album Title" in msg
         assert "https://example.com" in msg
 
-    def test_under_160_chars(self):
-        msg = format_watchlist_sms(
-            creator_name="Short",
-            category="music",
-            title="Short",
-            release_type="album",
-            link="https://x.co",
-        )
-        assert len(msg) <= 160
-
-    def test_truncates_long_title(self):
-        long_title = "A" * 200
-        msg = format_watchlist_sms(
-            creator_name="Artist",
-            category="music",
-            title=long_title,
-            release_type="album",
-            link="https://example.com/very-long-path",
-        )
-        assert len(msg) <= 160
-        assert "https://example.com/very-long-path" in msg
-
-    def test_preserves_link(self):
-        link = "https://example.com/article/12345"
-        msg = format_watchlist_sms(
-            creator_name="A" * 50,
-            category="music",
-            title="T" * 100,
-            release_type="album",
-            link=link,
-        )
-        assert link in msg
-
     def test_announcement_type(self):
-        msg = format_watchlist_sms(
+        msg = format_watchlist_message(
             creator_name="Author",
             category="book",
             title="New Book",
@@ -81,7 +41,7 @@ class TestFormatWatchlistSMS:
         assert "Announced" in msg
 
     def test_season_type(self):
-        msg = format_watchlist_sms(
+        msg = format_watchlist_message(
             creator_name="Show",
             category="tv",
             title="Season 3",
@@ -90,43 +50,62 @@ class TestFormatWatchlistSMS:
         )
         assert "New Season" in msg
 
+    def test_link_always_present(self):
+        link = "https://example.com/article/12345"
+        msg = format_watchlist_message(
+            creator_name="Artist",
+            category="music",
+            title="Title",
+            release_type="album",
+            link=link,
+        )
+        assert link in msg
 
-class TestFormatDiscoverySMS:
+    def test_unknown_release_type_falls_back(self):
+        msg = format_watchlist_message(
+            creator_name="Artist",
+            category="music",
+            title="Something",
+            release_type="compilation",
+            link="https://example.com",
+        )
+        assert "New Release" in msg
+
+
+class TestFormatDiscoveryMessage:
     def test_basic_format(self):
-        msg = format_discovery_sms(
+        msg = format_discovery_message(
             category="music",
             title="New Song",
             creator_name="New Artist",
             reason="Similar atmospheric style",
             link="https://example.com",
         )
-        assert msg.startswith("Hey,\n")
         assert "Rec" in msg
         assert "Music" in msg
         assert "New Song" in msg
+        assert "Similar atmospheric style" in msg
 
-    def test_drops_reason_if_over_160(self):
-        long_reason = "R" * 100
-        msg = format_discovery_sms(
+    def test_reason_omitted_when_empty(self):
+        msg = format_discovery_message(
             category="music",
-            title="Song Title",
-            creator_name="Artist Name",
-            reason=long_reason,
-            link="https://example.com/article",
-        )
-        assert len(msg) <= 160
-        if long_reason not in msg:
-            assert "https://example.com/article" in msg
-
-    def test_hard_cap_160(self):
-        msg = format_discovery_sms(
-            category="film",
-            title="T" * 80,
-            creator_name="C" * 80,
+            title="Song",
+            creator_name="Artist",
             reason="",
             link="https://example.com",
         )
-        assert len(msg) <= 160
+        lines = msg.strip().splitlines()
+        assert "https://example.com" in lines[-1]
+
+    def test_link_always_present(self):
+        msg = format_discovery_message(
+            category="film",
+            title="Movie",
+            creator_name="Various",
+            reason="",
+            link="https://example.com/film",
+        )
+        assert "https://example.com/film" in msg
 
 
 class TestQuietHours:
@@ -175,7 +154,7 @@ class TestQuietHours:
 
 class TestFlushQueue:
     @patch("watcher.notify.get_session_factory")
-    @patch("watcher.notify.send_sms")
+    @patch("watcher.notify.send_whatsapp")
     @patch("watcher.notify.get_quiet_hours_config")
     def test_flush_sends_pending(self, mock_config, mock_send, mock_factory):
         mock_config.return_value = {"max_batch": 3}
@@ -195,14 +174,13 @@ class TestFlushQueue:
         session.commit()
 
         mock_factory.return_value = lambda: session
-        # Need to mock the factory to return our session
         mock_factory.return_value = Session
 
         flush_queue(dry_run=False)
         mock_send.assert_called_once_with("Test message", dry_run=False)
 
     @patch("watcher.notify.get_session_factory")
-    @patch("watcher.notify.send_sms")
+    @patch("watcher.notify.send_whatsapp")
     @patch("watcher.notify.get_quiet_hours_config")
     def test_flush_respects_max_batch(self, mock_config, mock_send, mock_factory):
         mock_config.return_value = {"max_batch": 2}
@@ -228,7 +206,7 @@ class TestFlushQueue:
         assert mock_send.call_count == 2
 
     @patch("watcher.notify.get_session_factory")
-    @patch("watcher.notify.send_sms")
+    @patch("watcher.notify.send_whatsapp")
     @patch("watcher.notify.get_quiet_hours_config")
     def test_flush_dry_run(self, mock_config, mock_send, mock_factory):
         mock_config.return_value = {"max_batch": 3}
@@ -253,15 +231,14 @@ class TestFlushQueue:
         mock_send.assert_called_once_with("Test", dry_run=True)
 
 
-class TestSendSMS:
+class TestSendWhatsApp:
     @patch("watcher.notify._get_twilio_client")
     @patch("watcher.notify.get_env")
-    def test_send_sms_calls_twilio(self, mock_env, mock_twilio):
+    def test_send_whatsapp_calls_twilio(self, mock_env, mock_twilio):
         def env_side_effect(name, required=True):
             values = {
-                "TWILIO_FROM_NUMBER": "+1111111111",
-                "YOUR_PHONE_NUMBER": "+2222222222",
-                "TWILIO_MESSAGING_SERVICE_SID": None,
+                "TWILIO_FROM_NUMBER": "+15559829514",
+                "YOUR_PHONE_NUMBER": "+16109520020",
             }
             if name in values:
                 return values[name]
@@ -273,41 +250,13 @@ class TestSendSMS:
         mock_client = MagicMock()
         mock_twilio.return_value = mock_client
 
-        send_sms("Hello", dry_run=False)
+        send_whatsapp("Hello", dry_run=False)
 
         mock_client.messages.create.assert_called_once_with(
             body="Hello",
-            from_="+1111111111",
-            to="+2222222222",
+            from_="whatsapp:+15559829514",
+            to="whatsapp:+16109520020",
         )
 
-    @patch("watcher.notify._get_twilio_client")
-    @patch("watcher.notify.get_env")
-    def test_send_sms_prefers_messaging_service(self, mock_env, mock_twilio):
-        def env_side_effect(name, required=True):
-            values = {
-                "YOUR_PHONE_NUMBER": "+2222222222",
-                "TWILIO_MESSAGING_SERVICE_SID": "MG123",
-            }
-            if name in values:
-                return values[name]
-            if name == "TWILIO_FROM_NUMBER" and not required:
-                return None
-            if required:
-                raise KeyError(name)
-            return None
-
-        mock_env.side_effect = env_side_effect
-        mock_client = MagicMock()
-        mock_twilio.return_value = mock_client
-
-        send_sms("Hello", dry_run=False)
-
-        mock_client.messages.create.assert_called_once_with(
-            body="Hello",
-            messaging_service_sid="MG123",
-            to="+2222222222",
-        )
-
-    def test_send_sms_dry_run_no_twilio(self):
-        send_sms("Hello", dry_run=True)
+    def test_send_whatsapp_dry_run_no_twilio(self):
+        send_whatsapp("Hello", dry_run=True)

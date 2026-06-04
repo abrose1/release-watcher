@@ -38,7 +38,7 @@ def disc_session():
 
 
 class TestMusicDiscovery:
-    @patch("watcher.jobs.discovery.send_sms")
+    @patch("watcher.jobs.discovery.send_whatsapp")
     @patch("watcher.jobs.discovery.is_quiet_hours", return_value=False)
     @patch("watcher.jobs.discovery.judge_discovery_candidate")
     @patch("watcher.jobs.discovery.get_spotify_seed_playlist_ids", return_value=["test_playlist"])
@@ -120,7 +120,7 @@ class TestMusicDiscovery:
 
 
 class TestFilmDiscovery:
-    @patch("watcher.jobs.discovery.send_sms")
+    @patch("watcher.jobs.discovery.send_whatsapp")
     @patch("watcher.jobs.discovery.is_quiet_hours", return_value=False)
     @patch("watcher.jobs.discovery.judge_discovery_candidate")
     @patch("watcher.jobs.discovery.get_film_genre_ids", return_value=[18, 53])
@@ -152,7 +152,7 @@ class TestFilmDiscovery:
 
 
 class TestTVDiscovery:
-    @patch("watcher.jobs.discovery.send_sms")
+    @patch("watcher.jobs.discovery.send_whatsapp")
     @patch("watcher.jobs.discovery.is_quiet_hours", return_value=False)
     @patch("watcher.jobs.discovery.judge_discovery_candidate")
     async def test_tv_discovery_flow(self, mock_judge, mock_quiet, mock_send, disc_session):
@@ -180,7 +180,7 @@ class TestTVDiscovery:
 
 
 class TestBookDiscovery:
-    @patch("watcher.jobs.discovery.send_sms")
+    @patch("watcher.jobs.discovery.send_whatsapp")
     @patch("watcher.jobs.discovery.is_quiet_hours", return_value=False)
     @patch("watcher.jobs.discovery.judge_discovery_candidate")
     async def test_book_discovery_flow(self, mock_judge, mock_quiet, mock_send, disc_session):
@@ -200,7 +200,7 @@ class TestBookDiscovery:
 
 
 class TestDiscoveryDryRun:
-    @patch("watcher.jobs.discovery.send_sms")
+    @patch("watcher.jobs.discovery.send_whatsapp")
     @patch("watcher.jobs.discovery.judge_discovery_candidate")
     @patch("watcher.jobs.discovery.get_spotify_seed_playlist_ids", return_value=["test_playlist"])
     async def test_dry_run_no_db_writes(

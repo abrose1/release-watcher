@@ -12,7 +12,7 @@ from datetime import datetime, date, timedelta, timezone
 from watcher.db import get_session_factory
 from watcher.models import TrackedCreator, Release, NotificationQueue, UserOverride
 from watcher.notify import (
-    format_watchlist_sms, send_sms, send_error_sms,
+    format_watchlist_message, send_whatsapp, send_error_whatsapp,
     flush_queue, is_quiet_hours, next_send_after,
 )
 from watcher.sources.spotify import SpotifyClient
@@ -153,7 +153,7 @@ async def run_scan(dry_run: bool = False):
 
                 if judge_result.notify:
                     link = judge_result.best_link or (search_dicts[0]["url"] if search_dicts else "")
-                    sms_text = format_watchlist_sms(
+                    message_text = format_watchlist_message(
                         creator_name=creator.name,
                         category=creator.category,
                         title=release_data["title"],
@@ -178,7 +178,7 @@ async def run_scan(dry_run: bool = False):
                         if is_quiet_hours():
                             queue_item = NotificationQueue(
                                 release_id=release.id,
-                                message_text=sms_text,
+                                message_text=message_text,
                                 queued_at=datetime.now(timezone.utc).replace(tzinfo=None),
                                 send_after=next_send_after(),
                                 priority=10 if creator.tier == 1 else 30,
@@ -186,10 +186,10 @@ async def run_scan(dry_run: bool = False):
                             session.add(queue_item)
                             notifications_queued += 1
                         else:
-                            send_sms(sms_text, dry_run=dry_run)
+                            send_whatsapp(message_text, dry_run=dry_run)
                             notifications_sent += 1
                     else:
-                        logger.info(f"[DRY RUN] Would notify: {sms_text}")
+                        logger.info(f"[DRY RUN] Would notify: {message_text}")
                         notifications_sent += 1
 
         if not dry_run:
@@ -220,7 +220,7 @@ def main():
     except Exception as e:
         logging.exception(f"Job failed: {e}")
         if not args.dry_run:
-            send_error_sms("daily-scan")
+            send_error_whatsapp("daily-scan")
         sys.exit(1)
 
 

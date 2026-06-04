@@ -13,7 +13,7 @@ from watcher.config import get_film_taste, get_film_genre_ids, get_spotify_seed_
 from watcher.db import get_session_factory
 from watcher.models import TrackedCreator, DiscoverySent, NotificationQueue
 from watcher.notify import (
-    format_discovery_sms, send_sms, send_error_sms,
+    format_discovery_message, send_whatsapp, send_error_whatsapp,
     is_quiet_hours, next_send_after,
 )
 from watcher.sources.spotify import SpotifyClient
@@ -29,10 +29,10 @@ def _already_sent(session, external_id: str) -> bool:
     return session.query(DiscoverySent).filter_by(external_id=external_id).first() is not None
 
 
-def _send_or_queue_discovery(session, sms_text: str, discovery_sent: DiscoverySent, dry_run: bool):
+def _send_or_queue_discovery(session, message_text: str, discovery_sent: DiscoverySent, dry_run: bool):
     """Send or queue a discovery notification."""
     if dry_run:
-        logger.info(f"[DRY RUN] Would notify: {sms_text}")
+        logger.info(f"[DRY RUN] Would notify: {message_text}")
         return
 
     session.add(discovery_sent)
@@ -41,14 +41,14 @@ def _send_or_queue_discovery(session, sms_text: str, discovery_sent: DiscoverySe
     if is_quiet_hours():
         queue_item = NotificationQueue(
             discovery_sent_id=discovery_sent.id,
-            message_text=sms_text,
+            message_text=message_text,
             queued_at=datetime.now(timezone.utc).replace(tzinfo=None),
             send_after=next_send_after(),
             priority=50,
         )
         session.add(queue_item)
     else:
-        send_sms(sms_text, dry_run=dry_run)
+        send_whatsapp(message_text, dry_run=dry_run)
 
 
 async def discover_music(session, spotify: SpotifyClient, brave: BraveSearchClient, dry_run: bool) -> int:
@@ -114,7 +114,7 @@ async def discover_music(session, spotify: SpotifyClient, brave: BraveSearchClie
             if _already_sent(session, external_id):
                 continue
 
-            sms_text = format_discovery_sms(
+            message_text = format_discovery_message(
                 "music", result.reason[:40], "Various", "", link
             )
             discovery = DiscoverySent(
@@ -124,7 +124,7 @@ async def discover_music(session, spotify: SpotifyClient, brave: BraveSearchClie
                 creator_name="Various",
                 sent_at=datetime.now(timezone.utc).replace(tzinfo=None),
             )
-            _send_or_queue_discovery(session, sms_text, discovery, dry_run)
+            _send_or_queue_discovery(session, message_text, discovery, dry_run)
             sent += 1
             if sent >= 1:
                 break
@@ -168,7 +168,7 @@ async def discover_films(session, tmdb: TMDBClient, brave: BraveSearchClient, dr
 
         if result.notify:
             link = result.best_link or (search_dicts[0]["url"] if search_dicts else "")
-            sms_text = format_discovery_sms("film", movie.title, "Various", result.reason, link)
+            message_text = format_discovery_message("film", movie.title, "Various", result.reason, link)
             discovery = DiscoverySent(
                 external_id=external_id,
                 category="film",
@@ -176,7 +176,7 @@ async def discover_films(session, tmdb: TMDBClient, brave: BraveSearchClient, dr
                 creator_name="Various",
                 sent_at=datetime.now(timezone.utc).replace(tzinfo=None),
             )
-            _send_or_queue_discovery(session, sms_text, discovery, dry_run)
+            _send_or_queue_discovery(session, message_text, discovery, dry_run)
             sent += 1
             if sent >= 1:
                 break
@@ -230,7 +230,7 @@ async def discover_tv(session, tmdb: TMDBClient, brave: BraveSearchClient, dry_r
 
             if result.notify:
                 link = result.best_link or (search_dicts[0]["url"] if search_dicts else "")
-                sms_text = format_discovery_sms("tv", show.name, show.name, result.reason, link)
+                message_text = format_discovery_message("tv", show.name, show.name, result.reason, link)
                 discovery = DiscoverySent(
                     external_id=external_id,
                     category="tv",
@@ -238,7 +238,7 @@ async def discover_tv(session, tmdb: TMDBClient, brave: BraveSearchClient, dry_r
                     creator_name=show.name,
                     sent_at=datetime.now(timezone.utc).replace(tzinfo=None),
                 )
-                _send_or_queue_discovery(session, sms_text, discovery, dry_run)
+                _send_or_queue_discovery(session, message_text, discovery, dry_run)
                 sent += 1
                 if sent >= 1:
                     return sent
@@ -285,7 +285,7 @@ async def discover_books(session, brave: BraveSearchClient, dry_run: bool) -> in
             if _already_sent(session, external_id):
                 continue
 
-            sms_text = format_discovery_sms("book", result.reason[:40], "Various", "", link)
+            message_text = format_discovery_message("book", result.reason[:40], "Various", "", link)
             discovery = DiscoverySent(
                 external_id=external_id,
                 category="book",
@@ -293,7 +293,7 @@ async def discover_books(session, brave: BraveSearchClient, dry_run: bool) -> in
                 creator_name="Various",
                 sent_at=datetime.now(timezone.utc).replace(tzinfo=None),
             )
-            _send_or_queue_discovery(session, sms_text, discovery, dry_run)
+            _send_or_queue_discovery(session, message_text, discovery, dry_run)
             sent += 1
             if sent >= 1:
                 break
@@ -343,7 +343,7 @@ def main():
     except Exception as e:
         logging.exception(f"Job failed: {e}")
         if not args.dry_run:
-            send_error_sms("weekly-discovery")
+            send_error_whatsapp("weekly-discovery")
         sys.exit(1)
 
 

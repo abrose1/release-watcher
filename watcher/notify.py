@@ -1,4 +1,4 @@
-"""Twilio SMS notifications with quiet hours and error alerting."""
+"""Twilio WhatsApp notifications with quiet hours and error alerting."""
 
 import logging
 import random
@@ -13,64 +13,176 @@ from watcher.models import NotificationQueue
 
 logger = logging.getLogger(__name__)
 
-GREET_GENERIC = (
-    "Hey,",
-    "Hey there,",
-    "Hi,",
-    "Hiya,",
-    "Morning,",
-    "What's good,",
-    "Heads up —",
-)
+# ---------------------------------------------------------------------------
+# SMS helpers — commented out; kept for potential future re-enable
+# ---------------------------------------------------------------------------
 
-GREET_WITH_NAME = (
-    "Hey {name},",
-    "Hi {name},",
-    "Morning {name},",
-    "{name}, quick note —",
-    "Hey {name} — FYI:",
-)
+# GREET_GENERIC = (
+#     "Hey,",
+#     "Hey there,",
+#     "Hi,",
+#     "Hiya,",
+#     "Morning,",
+#     "What's good,",
+#     "Heads up —",
+# )
+#
+# GREET_WITH_NAME = (
+#     "Hey {name},",
+#     "Hi {name},",
+#     "Morning {name},",
+#     "{name}, quick note —",
+#     "Hey {name} — FYI:",
+# )
+#
+#
+# def _pick_sms_opening() -> str:
+#     """Return a casual one-line greeting, sometimes personalized from config."""
+#     name = get_sms_first_name()
+#     pool: list[str] = list(GREET_GENERIC)
+#     if name:
+#         pool.extend(template.format(name=name) for template in GREET_WITH_NAME)
+#     return random.choice(pool)
+#
+#
+# def _fit_watchlist_core(
+#     type_label: str,
+#     creator_name: str,
+#     title: str,
+#     link: str,
+#     max_len: int,
+# ) -> str:
+#     """Body only (no greeting). Fits in max_len; keeps link; may truncate quoted title."""
+#     line1 = f"{type_label} \u00b7 {creator_name}"
+#     core = f"{line1}\n\"{title}\"\n{link}"
+#     if len(core) <= max_len:
+#         return core
+#
+#     framing = len(f'{line1}\n""\n{link}')
+#     available = max_len - framing - 3
+#     if available > 0:
+#         return f'{line1}\n"{title[:available]}..."\n{link}'
+#     if len(f"{line1}\n{link}") <= max_len:
+#         return f"{line1}\n{link}"
+#     return f"{line1}\n{link}"[:max_len]
+#
+#
+# def format_watchlist_sms(
+#     creator_name: str,
+#     category: str,
+#     title: str,
+#     release_type: str,
+#     link: str,
+# ) -> str:
+#     """Format a watchlist hit SMS. Casual opener + facts; stays under ~160 GSM chars."""
+#     type_label = {
+#         "album": "New Album",
+#         "single": "New Single",
+#         "novel": "New Book",
+#         "season": "New Season",
+#         "announcement": "Announced",
+#     }.get(release_type, "New Release")
+#
+#     opening = _pick_sms_opening()
+#     budget = 160 - len(opening) - 1  # newline between greeting and body
+#     if budget <= 0:
+#         return (opening[:160])[:160]
+#     core = _fit_watchlist_core(type_label, creator_name, title, link, budget)
+#     return (f"{opening}\n{core}")[:160]
+#
+#
+# def _fit_discovery_core(
+#     category: str,
+#     title: str,
+#     creator_name: str,
+#     reason: str,
+#     link: str,
+#     max_len: int,
+# ) -> str:
+#     """Body only (no greeting). Drops reason line when needed; may truncate quoted title."""
+#     head = f"Rec \u00b7 {category.title()}"
+#     reason_line_full = reason.strip()
+#
+#     if reason_line_full:
+#         msg_wr = f'{head}\n"{title}" by {creator_name}\n{reason_line_full}\n{link}'
+#         if len(msg_wr) <= max_len:
+#             return msg_wr
+#
+#     msg_nr = f'{head}\n"{title}" by {creator_name}\n{link}'
+#     if len(msg_nr) <= max_len:
+#         return msg_nr
+#
+#     prefix = head + "\n\""
+#     suffix = f'" by {creator_name}\n{link}'
+#     avail_for_title = max_len - len(prefix) - len(suffix) - 3
+#     if avail_for_title > 0:
+#         tt = title[:avail_for_title] + "..."
+#         cand = prefix + tt + suffix
+#         if len(cand) <= max_len:
+#             return cand
+#     return msg_nr[:max_len]
+#
+#
+# def format_discovery_sms(
+#     category: str,
+#     title: str,
+#     creator_name: str,
+#     reason: str,
+#     link: str,
+# ) -> str:
+#     """Format a discovery rec SMS with a casual opener; drops reason line if tight on space."""
+#     opening = _pick_sms_opening()
+#     budget = 160 - len(opening) - 1  # newline between greeting and body
+#     if budget <= 0:
+#         return (opening[:160])[:160]
+#     core = _fit_discovery_core(category, title, creator_name, reason, link, budget)
+#     return (f"{opening}\n{core}")[:160]
+#
+#
+# def send_sms(message_text: str, dry_run: bool = False):
+#     """Send an SMS via Twilio. Noop if dry_run=True."""
+#     if dry_run:
+#         logger.info(f"[DRY RUN] Would send SMS: {message_text}")
+#         return
+#
+#     client = _get_twilio_client()
+#     to_number = get_env("YOUR_PHONE_NUMBER")
+#     messaging_service_sid = get_env("TWILIO_MESSAGING_SERVICE_SID", required=False)
+#
+#     payload = {
+#         "body": message_text,
+#         "to": to_number,
+#     }
+#     if messaging_service_sid:
+#         payload["messaging_service_sid"] = messaging_service_sid
+#     else:
+#         payload["from_"] = get_env("TWILIO_FROM_NUMBER")
+#
+#     client.messages.create(**payload)
+#     logger.info(f"SMS sent: {message_text[:50]}...")
+#
+#
+# def send_error_sms(job_name: str):
+#     """Send a brief error notification SMS."""
+#     message = f"[Watcher] {job_name} failed \u2014 check Railway logs"
+#     try:
+#         send_sms(message, dry_run=False)
+#     except Exception as e:
+#         logger.error(f"Failed to send error SMS: {e}")
+
+# ---------------------------------------------------------------------------
+# WhatsApp message formatting
+# ---------------------------------------------------------------------------
 
 
-def _pick_sms_opening() -> str:
-    """Return a casual one-line greeting, sometimes personalized from config."""
-    name = get_sms_first_name()
-    pool: list[str] = list(GREET_GENERIC)
-    if name:
-        pool.extend(template.format(name=name) for template in GREET_WITH_NAME)
-    return random.choice(pool)
-
-
-def _fit_watchlist_core(
-    type_label: str,
-    creator_name: str,
-    title: str,
-    link: str,
-    max_len: int,
-) -> str:
-    """Body only (no greeting). Fits in max_len; keeps link; may truncate quoted title."""
-    line1 = f"{type_label} \u00b7 {creator_name}"
-    core = f"{line1}\n\"{title}\"\n{link}"
-    if len(core) <= max_len:
-        return core
-
-    framing = len(f'{line1}\n""\n{link}')
-    available = max_len - framing - 3
-    if available > 0:
-        return f'{line1}\n"{title[:available]}..."\n{link}'
-    if len(f"{line1}\n{link}") <= max_len:
-        return f"{line1}\n{link}"
-    return f"{line1}\n{link}"[:max_len]
-
-
-def format_watchlist_sms(
+def format_watchlist_message(
     creator_name: str,
     category: str,
     title: str,
     release_type: str,
     link: str,
 ) -> str:
-    """Format a watchlist hit SMS. Casual opener + facts; stays under ~160 GSM chars."""
+    """Format a watchlist hit WhatsApp message."""
     type_label = {
         "album": "New Album",
         "single": "New Single",
@@ -79,60 +191,28 @@ def format_watchlist_sms(
         "announcement": "Announced",
     }.get(release_type, "New Release")
 
-    opening = _pick_sms_opening()
-    budget = 160 - len(opening) - 1  # newline between greeting and body
-    if budget <= 0:
-        return (opening[:160])[:160]
-    core = _fit_watchlist_core(type_label, creator_name, title, link, budget)
-    return (f"{opening}\n{core}")[:160]
+    return f"{type_label} · {creator_name}\n\"{title}\"\n{link}"
 
 
-def _fit_discovery_core(
-    category: str,
-    title: str,
-    creator_name: str,
-    reason: str,
-    link: str,
-    max_len: int,
-) -> str:
-    """Body only (no greeting). Drops reason line when needed; may truncate quoted title."""
-    head = f"Rec \u00b7 {category.title()}"
-    reason_line_full = reason.strip()
-
-    if reason_line_full:
-        msg_wr = f'{head}\n"{title}" by {creator_name}\n{reason_line_full}\n{link}'
-        if len(msg_wr) <= max_len:
-            return msg_wr
-
-    msg_nr = f'{head}\n"{title}" by {creator_name}\n{link}'
-    if len(msg_nr) <= max_len:
-        return msg_nr
-
-    prefix = head + "\n\""
-    suffix = f'" by {creator_name}\n{link}'
-    avail_for_title = max_len - len(prefix) - len(suffix) - 3
-    if avail_for_title > 0:
-        tt = title[:avail_for_title] + "..."
-        cand = prefix + tt + suffix
-        if len(cand) <= max_len:
-            return cand
-    return msg_nr[:max_len]
-
-
-def format_discovery_sms(
+def format_discovery_message(
     category: str,
     title: str,
     creator_name: str,
     reason: str,
     link: str,
 ) -> str:
-    """Format a discovery rec SMS with a casual opener; drops reason line if tight on space."""
-    opening = _pick_sms_opening()
-    budget = 160 - len(opening) - 1  # newline between greeting and body
-    if budget <= 0:
-        return (opening[:160])[:160]
-    core = _fit_discovery_core(category, title, creator_name, reason, link, budget)
-    return (f"{opening}\n{core}")[:160]
+    """Format a discovery rec WhatsApp message."""
+    head = f"Rec · {category.title()}"
+    parts = [head, f'"{title}" by {creator_name}']
+    if reason and reason.strip():
+        parts.append(reason.strip())
+    parts.append(link)
+    return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# WhatsApp send helpers
+# ---------------------------------------------------------------------------
 
 
 def _get_twilio_client() -> TwilioClient:
@@ -142,36 +222,36 @@ def _get_twilio_client() -> TwilioClient:
     )
 
 
-def send_sms(message_text: str, dry_run: bool = False):
-    """Send an SMS via Twilio. Noop if dry_run=True."""
+def send_whatsapp(message_text: str, dry_run: bool = False):
+    """Send a WhatsApp message via Twilio. Noop if dry_run=True."""
     if dry_run:
-        logger.info(f"[DRY RUN] Would send SMS: {message_text}")
+        logger.info(f"[DRY RUN] Would send WhatsApp: {message_text}")
         return
 
     client = _get_twilio_client()
+    from_number = get_env("TWILIO_FROM_NUMBER")
     to_number = get_env("YOUR_PHONE_NUMBER")
-    messaging_service_sid = get_env("TWILIO_MESSAGING_SERVICE_SID", required=False)
 
-    payload = {
-        "body": message_text,
-        "to": to_number,
-    }
-    if messaging_service_sid:
-        payload["messaging_service_sid"] = messaging_service_sid
-    else:
-        payload["from_"] = get_env("TWILIO_FROM_NUMBER")
-
-    client.messages.create(**payload)
-    logger.info(f"SMS sent: {message_text[:50]}...")
+    client.messages.create(
+        body=message_text,
+        from_=f"whatsapp:{from_number}",
+        to=f"whatsapp:{to_number}",
+    )
+    logger.info(f"WhatsApp sent: {message_text[:50]}...")
 
 
-def send_error_sms(job_name: str):
-    """Send a brief error notification SMS."""
+def send_error_whatsapp(job_name: str):
+    """Send a brief error notification via WhatsApp."""
     message = f"[Watcher] {job_name} failed \u2014 check Railway logs"
     try:
-        send_sms(message, dry_run=False)
+        send_whatsapp(message, dry_run=False)
     except Exception as e:
-        logger.error(f"Failed to send error SMS: {e}")
+        logger.error(f"Failed to send error WhatsApp: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Quiet hours
+# ---------------------------------------------------------------------------
 
 
 def is_quiet_hours() -> bool:
@@ -251,7 +331,7 @@ def flush_queue(dry_run: bool = False):
                 logger.info(f"Max batch reached, dropping: {item.message_text[:30]}...")
                 break
 
-            send_sms(item.message_text, dry_run=dry_run)
+            send_whatsapp(item.message_text, dry_run=dry_run)
             if not dry_run:
                 item.sent_at = now
             sent_count += 1
