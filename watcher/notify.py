@@ -184,14 +184,14 @@ def format_watchlist_message(
 ) -> str:
     """Format a watchlist hit WhatsApp message."""
     type_label = {
-        "album": "New Album",
-        "single": "New Single",
-        "novel": "New Book",
-        "season": "New Season",
-        "announcement": "Announced",
-    }.get(release_type, "New Release")
+        "album": "album",
+        "single": "single",
+        "novel": "book",
+        "season": "season",
+        "announcement": "announcement",
+    }.get(release_type, "release")
 
-    return f"{type_label} · {creator_name}\n\"{title}\"\n{link}"
+    return f"New {type_label} from {creator_name} — \"{title}\"\n{link}"
 
 
 def format_discovery_message(

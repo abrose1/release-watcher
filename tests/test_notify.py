@@ -25,8 +25,7 @@ class TestFormatWatchlistMessage:
             release_type="album",
             link="https://example.com",
         )
-        assert "New Album" in msg
-        assert "Artist" in msg
+        assert "New album from Artist" in msg
         assert "Album Title" in msg
         assert "https://example.com" in msg
 
@@ -38,7 +37,7 @@ class TestFormatWatchlistMessage:
             release_type="announcement",
             link="https://example.com",
         )
-        assert "Announced" in msg
+        assert "New announcement from Author" in msg
 
     def test_season_type(self):
         msg = format_watchlist_message(
@@ -48,7 +47,7 @@ class TestFormatWatchlistMessage:
             release_type="season",
             link="https://example.com",
         )
-        assert "New Season" in msg
+        assert "New season from Show" in msg
 
     def test_link_always_present(self):
         link = "https://example.com/article/12345"
@@ -69,7 +68,7 @@ class TestFormatWatchlistMessage:
             release_type="compilation",
             link="https://example.com",
         )
-        assert "New Release" in msg
+        assert "New release from Artist" in msg
 
 
 class TestFormatDiscoveryMessage:

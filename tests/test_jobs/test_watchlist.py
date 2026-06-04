@@ -84,7 +84,7 @@ class TestWatchlistJob:
         mock_send.assert_called_once()
         call_args = mock_send.call_args[0][0]
         assert "Test Artist" in call_args
-        assert "https://example.com/review" in call_args
+        assert "https://spotify.com/album_1" in call_args
 
     @patch("watcher.jobs.watchlist.send_whatsapp")
     @patch("watcher.jobs.watchlist.flush_queue")

@@ -23,6 +23,7 @@ class Album:
     album_type: str
     artists: list[dict[str, str]]
     spotify_url: str
+    image_url: str = ""
 
 
 @dataclass
@@ -110,11 +111,12 @@ class SpotifyClient:
         """Get albums by an artist released on or after the given date."""
         data = await self._request(
             f"/artists/{spotify_id}/albums",
-            params={"include_groups": "album", "limit": 50, "market": "US"},
+            params={"include_groups": "album", "limit": 10, "market": "US"},
         )
         albums = []
         for item in data.get("items", []):
             if item.get("release_date", "") >= after_date.isoformat():
+                images = item.get("images", [])
                 albums.append(Album(
                     id=item["id"],
                     name=item["name"],
@@ -122,6 +124,7 @@ class SpotifyClient:
                     album_type=item["album_type"],
                     artists=[{"name": a["name"]} for a in item.get("artists", [])],
                     spotify_url=item.get("external_urls", {}).get("spotify", ""),
+                    image_url=images[0]["url"] if images else "",
                 ))
         return albums
 
@@ -129,11 +132,12 @@ class SpotifyClient:
         """Get singles by an artist released on or after the given date (Tier 1 only)."""
         data = await self._request(
             f"/artists/{spotify_id}/albums",
-            params={"include_groups": "single", "limit": 50, "market": "US"},
+            params={"include_groups": "single", "limit": 10, "market": "US"},
         )
         singles = []
         for item in data.get("items", []):
             if item.get("release_date", "") >= after_date.isoformat():
+                images = item.get("images", [])
                 singles.append(Album(
                     id=item["id"],
                     name=item["name"],
@@ -141,6 +145,7 @@ class SpotifyClient:
                     album_type="single",
                     artists=[{"name": a["name"]} for a in item.get("artists", [])],
                     spotify_url=item.get("external_urls", {}).get("spotify", ""),
+                    image_url=images[0]["url"] if images else "",
                 ))
         return singles
 

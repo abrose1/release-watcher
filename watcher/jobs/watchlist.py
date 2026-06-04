@@ -44,6 +44,8 @@ async def check_music_creator(creator: TrackedCreator, spotify: SpotifyClient, a
             "title": r.name,
             "type": r.album_type,
             "date": r.release_date,
+            "spotify_url": r.spotify_url,
+            "image_url": r.image_url,
         }
         for r in releases
     ]
@@ -152,7 +154,10 @@ async def run_scan(dry_run: bool = False):
                 )
 
                 if judge_result.notify:
-                    link = judge_result.best_link or (search_dicts[0]["url"] if search_dicts else "")
+                    if creator.category == "music":
+                        link = release_data.get("spotify_url") or judge_result.best_link or (search_dicts[0]["url"] if search_dicts else "")
+                    else:
+                        link = judge_result.best_link or (search_dicts[0]["url"] if search_dicts else "")
                     message_text = format_watchlist_message(
                         creator_name=creator.name,
                         category=creator.category,
