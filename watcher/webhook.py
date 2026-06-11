@@ -26,8 +26,10 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 OPT_IN_MESSAGE = (
-    "Release Watcher: Get SMS alerts when artists & authors you love release new content. "
-    "Reply Y to confirm. Msg&data rates may apply. Reply STOP to cancel, HELP for info."
+    "Release Watcher: Get automated alerts when tracked artists & authors release new content. "
+    "Up to 5 msgs/day. Msg & data rates may apply. Reply HELP for help, STOP to opt out. Reply Y to confirm.\n"
+    "Terms: sites.google.com/view/releasewatcher/termsandconditions\n"
+    "Privacy: sites.google.com/view/releasewatcher/privacypolicy"
 )
 
 CONFIRMATION_MESSAGE = (
