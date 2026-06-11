@@ -12,7 +12,7 @@ from datetime import datetime, date, timedelta, timezone
 from watcher.db import get_session_factory
 from watcher.models import TrackedCreator, Release, NotificationQueue, UserOverride
 from watcher.notify import (
-    format_watchlist_message, send_whatsapp, send_error_whatsapp,
+    format_watchlist_message, send_sms_to_subscribers, send_error_sms,
     flush_queue, is_quiet_hours, next_send_after,
 )
 from watcher.sources.spotify import SpotifyClient
@@ -191,7 +191,7 @@ async def run_scan(dry_run: bool = False):
                             session.add(queue_item)
                             notifications_queued += 1
                         else:
-                            send_whatsapp(message_text, dry_run=dry_run)
+                            send_sms_to_subscribers(message_text, dry_run=dry_run)
                             notifications_sent += 1
                     else:
                         logger.info(f"[DRY RUN] Would notify: {message_text}")
@@ -225,7 +225,7 @@ def main():
     except Exception as e:
         logging.exception(f"Job failed: {e}")
         if not args.dry_run:
-            send_error_whatsapp("daily-scan")
+            send_error_sms("daily-scan")
         sys.exit(1)
 
 

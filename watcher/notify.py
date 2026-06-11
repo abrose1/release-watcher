@@ -1,4 +1,8 @@
-"""Twilio WhatsApp notifications with quiet hours and error alerting."""
+"""Twilio SMS notifications with quiet hours and error alerting.
+
+WhatsApp send helpers are commented out below — kept as a fallback in case
+we need to revert from SMS back to WhatsApp (e.g. Twilio A2P compliance issues).
+"""
 
 import logging
 import random
@@ -9,7 +13,7 @@ from twilio.rest import Client as TwilioClient
 
 from watcher.config import get_env, get_quiet_hours_config, get_sms_first_name
 from watcher.db import get_session_factory
-from watcher.models import NotificationQueue
+from watcher.models import NotificationQueue, SmsSubscriber
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +175,60 @@ logger = logging.getLogger(__name__)
 #         logger.error(f"Failed to send error SMS: {e}")
 
 # ---------------------------------------------------------------------------
-# WhatsApp message formatting
+# SMS send helpers
+# ---------------------------------------------------------------------------
+
+
+def send_sms(message_text: str, to_number: str, dry_run: bool = False):
+    """Send an SMS to a specific number via Twilio."""
+    if dry_run:
+        logger.info("[DRY RUN] Would send SMS to %s: %s", to_number, message_text)
+        return
+
+    client = _get_twilio_client()
+    messaging_service_sid = get_env("TWILIO_MESSAGING_SERVICE_SID", required=False)
+    payload: dict = {"body": message_text, "to": to_number}
+    if messaging_service_sid:
+        payload["messaging_service_sid"] = messaging_service_sid
+    else:
+        payload["from_"] = get_env("TWILIO_FROM_NUMBER")
+
+    client.messages.create(**payload)
+    logger.info("SMS sent to %s: %s...", to_number, message_text[:50])
+
+
+def get_opted_in_numbers(session) -> list[str]:
+    """Return phone numbers of all currently opted-in subscribers."""
+    subscribers = session.query(SmsSubscriber).filter_by(opted_in=True).all()
+    return [s.phone_number for s in subscribers]
+
+
+def send_sms_to_subscribers(message_text: str, dry_run: bool = False):
+    """Broadcast an SMS to all opted-in subscribers."""
+    session_factory = get_session_factory()
+    session = session_factory()
+    try:
+        numbers = get_opted_in_numbers(session)
+        if not numbers:
+            logger.warning("No opted-in subscribers — SMS not sent")
+            return
+        for number in numbers:
+            send_sms(message_text, to_number=number, dry_run=dry_run)
+    finally:
+        session.close()
+
+
+def send_error_sms(job_name: str):
+    """Send a brief error notification SMS to all opted-in subscribers."""
+    message = f"[Watcher] {job_name} failed \u2014 check Railway logs"
+    try:
+        send_sms_to_subscribers(message, dry_run=False)
+    except Exception as e:
+        logger.error("Failed to send error SMS: %s", e)
+
+
+# ---------------------------------------------------------------------------
+# Message formatting (shared by SMS)
 # ---------------------------------------------------------------------------
 
 
@@ -182,7 +239,7 @@ def format_watchlist_message(
     release_type: str,
     link: str,
 ) -> str:
-    """Format a watchlist hit WhatsApp message."""
+    """Format a watchlist hit SMS."""
     type_label = {
         "album": "album",
         "single": "single",
@@ -201,7 +258,7 @@ def format_discovery_message(
     reason: str,
     link: str,
 ) -> str:
-    """Format a discovery rec WhatsApp message."""
+    """Format a discovery rec SMS."""
     head = f"Rec · {category.title()}"
     parts = [head, f'"{title}" by {creator_name}']
     if reason and reason.strip():
@@ -211,7 +268,7 @@ def format_discovery_message(
 
 
 # ---------------------------------------------------------------------------
-# WhatsApp send helpers
+# Twilio client
 # ---------------------------------------------------------------------------
 
 
@@ -222,31 +279,37 @@ def _get_twilio_client() -> TwilioClient:
     )
 
 
-def send_whatsapp(message_text: str, dry_run: bool = False):
-    """Send a WhatsApp message via Twilio. Noop if dry_run=True."""
-    if dry_run:
-        logger.info(f"[DRY RUN] Would send WhatsApp: {message_text}")
-        return
+# ---------------------------------------------------------------------------
+# WhatsApp send helpers — commented out; SMS is the active channel.
+# To revert: uncomment below, swap job imports back to send_whatsapp /
+# send_error_whatsapp, and update flush_queue to call send_whatsapp.
+# ---------------------------------------------------------------------------
 
-    client = _get_twilio_client()
-    from_number = get_env("TWILIO_FROM_NUMBER")
-    to_number = get_env("YOUR_PHONE_NUMBER")
-
-    client.messages.create(
-        body=message_text,
-        from_=f"whatsapp:{from_number}",
-        to=f"whatsapp:{to_number}",
-    )
-    logger.info(f"WhatsApp sent: {message_text[:50]}...")
-
-
-def send_error_whatsapp(job_name: str):
-    """Send a brief error notification via WhatsApp."""
-    message = f"[Watcher] {job_name} failed \u2014 check Railway logs"
-    try:
-        send_whatsapp(message, dry_run=False)
-    except Exception as e:
-        logger.error(f"Failed to send error WhatsApp: {e}")
+# def send_whatsapp(message_text: str, dry_run: bool = False):
+#     """Send a WhatsApp message via Twilio. Noop if dry_run=True."""
+#     if dry_run:
+#         logger.info(f"[DRY RUN] Would send WhatsApp: {message_text}")
+#         return
+#
+#     client = _get_twilio_client()
+#     from_number = get_env("TWILIO_FROM_NUMBER")
+#     to_number = get_env("YOUR_PHONE_NUMBER")
+#
+#     client.messages.create(
+#         body=message_text,
+#         from_=f"whatsapp:{from_number}",
+#         to=f"whatsapp:{to_number}",
+#     )
+#     logger.info(f"WhatsApp sent: {message_text[:50]}...")
+#
+#
+# def send_error_whatsapp(job_name: str):
+#     """Send a brief error notification via WhatsApp."""
+#     message = f"[Watcher] {job_name} failed \u2014 check Railway logs"
+#     try:
+#         send_whatsapp(message, dry_run=False)
+#     except Exception as e:
+#         logger.error(f"Failed to send error WhatsApp: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -325,13 +388,20 @@ def flush_queue(dry_run: bool = False):
             .all()
         )
 
+        numbers = get_opted_in_numbers(session)
+        if not numbers and not dry_run:
+            logger.warning("flush_queue: no opted-in subscribers, nothing to send")
+
         sent_count = 0
         for item in pending:
             if sent_count >= max_batch:
-                logger.info(f"Max batch reached, dropping: {item.message_text[:30]}...")
+                logger.info("Max batch reached, dropping: %s...", item.message_text[:30])
                 break
 
-            send_whatsapp(item.message_text, dry_run=dry_run)
+            for number in numbers:
+                send_sms(item.message_text, to_number=number, dry_run=dry_run)
+            if dry_run:
+                logger.info("[DRY RUN] Would flush: %s", item.message_text[:50])
             if not dry_run:
                 item.sent_at = now
             sent_count += 1

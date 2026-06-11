@@ -43,7 +43,7 @@ def ann_db():
 
 
 class TestAnnouncementJob:
-    @patch("watcher.jobs.announcement.send_whatsapp")
+    @patch("watcher.jobs.announcement.send_sms_to_subscribers")
     @patch("watcher.jobs.announcement.is_quiet_hours", return_value=False)
     @patch("watcher.jobs.announcement.judge_watchlist_hit")
     @patch("watcher.jobs.announcement.BraveSearchClient")
@@ -158,7 +158,7 @@ class TestAnnouncementJob:
 
         mock_judge.assert_not_called()
 
-    @patch("watcher.jobs.announcement.send_whatsapp")
+    @patch("watcher.jobs.announcement.send_sms_to_subscribers")
     @patch("watcher.jobs.announcement.is_quiet_hours", return_value=False)
     @patch("watcher.jobs.announcement.judge_watchlist_hit")
     @patch("watcher.jobs.announcement.BraveSearchClient")

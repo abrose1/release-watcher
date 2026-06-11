@@ -2,7 +2,7 @@ from datetime import datetime, date, timezone
 from typing import Optional
 
 from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, Date, Text, ForeignKey,
+    Boolean, Column, Integer, String, Float, DateTime, Date, Text, ForeignKey,
     create_engine,
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
@@ -97,3 +97,20 @@ class TierChange(Base):
     changed_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     tracked_creator = relationship("TrackedCreator", back_populates="tier_changes")
+
+
+class SmsSubscriber(Base):
+    """Tracks opt-in state for SMS recipients (A2P 10DLC compliance)."""
+
+    __tablename__ = "sms_subscribers"
+
+    id = Column(Integer, primary_key=True)
+    phone_number = Column(String, nullable=False, unique=True)
+    opted_in = Column(Boolean, nullable=False, default=False)
+    opted_in_at = Column(DateTime, nullable=True)
+    opted_out_at = Column(DateTime, nullable=True)
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+    )

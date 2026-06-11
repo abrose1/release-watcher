@@ -26,3 +26,8 @@ name = "weekly-sync"
 type = "cron"
 schedule = "0 13 * * 0"
 startCommand = "python -m watcher.sync_creators"
+
+[[services]]
+name = "sms-webhook"
+type = "web"
+startCommand = "gunicorn watcher.webhook:app --bind 0.0.0.0:$PORT --workers 2"

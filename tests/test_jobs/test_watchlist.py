@@ -35,7 +35,7 @@ def job_db():
 
 
 class TestWatchlistJob:
-    @patch("watcher.jobs.watchlist.send_whatsapp")
+    @patch("watcher.jobs.watchlist.send_sms_to_subscribers")
     @patch("watcher.jobs.watchlist.is_quiet_hours", return_value=False)
     @patch("watcher.jobs.watchlist.flush_queue")
     @patch("watcher.jobs.watchlist.judge_watchlist_hit")
@@ -86,7 +86,7 @@ class TestWatchlistJob:
         assert "Test Artist" in call_args
         assert "https://spotify.com/album_1" in call_args
 
-    @patch("watcher.jobs.watchlist.send_whatsapp")
+    @patch("watcher.jobs.watchlist.send_sms_to_subscribers")
     @patch("watcher.jobs.watchlist.flush_queue")
     @patch("watcher.jobs.watchlist.judge_watchlist_hit")
     @patch("watcher.jobs.watchlist.BraveSearchClient")
@@ -171,7 +171,7 @@ class TestWatchlistJob:
 
         mock_judge.assert_not_called()
 
-    @patch("watcher.jobs.watchlist.send_whatsapp")
+    @patch("watcher.jobs.watchlist.send_sms_to_subscribers")
     @patch("watcher.jobs.watchlist.next_send_after")
     @patch("watcher.jobs.watchlist.is_quiet_hours", return_value=True)
     @patch("watcher.jobs.watchlist.flush_queue")
