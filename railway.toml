@@ -4,25 +4,25 @@
 builder = "nixpacks"
 
 [[services]]
-name = "daily-scan"
+name = "daily-scan-cron"
 type = "cron"
 schedule = "0 14 * * *"
 startCommand = "python -m watcher.jobs.watchlist"
 
 [[services]]
-name = "announcement-scan"
+name = "announcement-scan-cron"
 type = "cron"
 schedule = "0 14 * * *"
 startCommand = "python -m watcher.jobs.announcement"
 
 [[services]]
-name = "weekly-discovery"
+name = "weekly-discovery-cron"
 type = "cron"
 schedule = "0 15 * * 0"
 startCommand = "python -m watcher.jobs.discovery"
 
 [[services]]
-name = "weekly-sync"
+name = "weekly-scan-taste-update-cron"
 type = "cron"
 schedule = "0 13 * * 0"
 startCommand = "python -m watcher.sync_creators"
