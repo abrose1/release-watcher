@@ -1,10 +1,13 @@
 """Spotify API client using Client Credentials flow."""
 
 import asyncio
+import logging
 import time
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 import httpx
 
@@ -96,7 +99,12 @@ class SpotifyClient:
                     self._access_token = None
                     continue
                 if resp.status_code == 429:
-                    retry_after = int(resp.headers.get("Retry-After", 2 ** attempt))
+                    raw_retry = int(resp.headers.get("Retry-After", 2 ** attempt))
+                    retry_after = min(raw_retry, 30)
+                    logger.warning(
+                        "Spotify rate-limited (attempt %d/%d): Retry-After=%ds (capped to %ds)",
+                        attempt + 1, self.MAX_RETRIES, raw_retry, retry_after,
+                    )
                     await asyncio.sleep(retry_after)
                     continue
                 if resp.status_code != 200:
