@@ -73,6 +73,8 @@ async def check_tv_creator(creator: TrackedCreator, tmdb: TMDBClient, after_date
 async def check_book_creator(creator: TrackedCreator, books: BooksClient, after_date: date):
     """Check for new books from an author."""
     logger.info("Checking books for author: %s (id=%s)", creator.name, creator.external_id)
+    # Brief pause between book API calls — Google Books sporadically 503s on rapid sequential requests
+    await asyncio.sleep(1)
     if creator.external_id:
         found_books = await books.get_author_new_books(creator.external_id, after_date)
     else:
