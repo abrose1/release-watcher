@@ -19,7 +19,7 @@ from watcher.config import get_preferences
 from watcher.db import get_session_factory
 from watcher.models import TrackedCreator, Release, NotificationQueue
 from watcher.notify import (
-    format_watchlist_message, send_sms_to_subscribers, send_error_sms,
+    format_watchlist_message, send_sms_to_subscribers,
     is_quiet_hours, next_send_after,
 )
 from watcher.sources.brave import BraveSearchClient
@@ -155,8 +155,6 @@ def main():
         run(dry_run=args.dry_run)
     except Exception as e:
         logging.exception(f"Job failed: {e}")
-        if not args.dry_run:
-            send_error_sms("announcement-scan")
         sys.exit(1)
 
 

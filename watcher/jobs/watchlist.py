@@ -12,7 +12,7 @@ from datetime import datetime, date, timedelta, timezone
 from watcher.db import get_session_factory
 from watcher.models import TrackedCreator, Release, NotificationQueue, UserOverride
 from watcher.notify import (
-    format_watchlist_message, send_sms_to_subscribers, send_error_sms,
+    format_watchlist_message, send_sms_to_subscribers,
     flush_queue, is_quiet_hours, next_send_after,
 )
 from watcher.sources.spotify import SpotifyClient
@@ -224,8 +224,6 @@ def main():
         run(dry_run=args.dry_run)
     except Exception as e:
         logging.exception(f"Job failed: {e}")
-        if not args.dry_run:
-            send_error_sms("daily-scan")
         sys.exit(1)
 
 

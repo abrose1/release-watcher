@@ -13,7 +13,7 @@ from watcher.config import get_film_taste, get_film_genre_ids, get_spotify_seed_
 from watcher.db import get_session_factory
 from watcher.models import TrackedCreator, DiscoverySent, NotificationQueue
 from watcher.notify import (
-    format_discovery_message, send_sms_to_subscribers, send_error_sms,
+    format_discovery_message, send_sms_to_subscribers,
     is_quiet_hours, next_send_after,
 )
 from watcher.sources.spotify import SpotifyClient
@@ -342,8 +342,6 @@ def main():
         run(dry_run=args.dry_run)
     except Exception as e:
         logging.exception(f"Job failed: {e}")
-        if not args.dry_run:
-            send_error_sms("weekly-discovery")
         sys.exit(1)
 
 
