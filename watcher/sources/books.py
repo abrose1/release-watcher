@@ -1,5 +1,6 @@
 """Google Books API client."""
 
+import logging
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -7,6 +8,8 @@ from typing import Any
 import httpx
 
 from watcher.config import get_env
+
+logger = logging.getLogger(__name__)
 
 
 class BooksError(Exception):
@@ -34,25 +37,61 @@ class BooksClient:
 
     async def _request(self, path: str, params: dict | None = None) -> Any:
         """Make an authenticated request with retry logic."""
+        import asyncio
+
         request_params = {"key": self.api_key}
         if params:
             request_params.update(params)
 
-        for attempt in range(self.MAX_RETRIES):
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(
-                    f"{self.BASE_URL}{path}",
-                    params=request_params,
-                )
-                if resp.status_code == 429:
-                    import asyncio
-                    await asyncio.sleep(2 ** attempt)
-                    continue
-                if resp.status_code != 200:
-                    raise BooksError(f"Google Books API error {resp.status_code}: {resp.text}")
-                return resp.json()
+        url = f"{self.BASE_URL}{path}"
+        # Log without the key so it's safe to copy from logs
+        safe_params = {k: v for k, v in (params or {}).items()}
+        logger.debug("Books API request: GET %s params=%s", url, safe_params)
 
-        raise BooksError("Max retries exceeded")
+        last_exc: Exception | None = None
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    resp = await client.get(url, params=request_params)
+
+                logger.debug(
+                    "Books API response: attempt=%d status=%d url=%s",
+                    attempt + 1, resp.status_code, url,
+                )
+
+                if resp.status_code == 200:
+                    return resp.json()
+
+                if resp.status_code == 429 or resp.status_code >= 500:
+                    delay = 2 ** attempt
+                    logger.warning(
+                        "Books API transient error (attempt %d/%d): status=%d body=%r — retrying in %ds",
+                        attempt + 1, self.MAX_RETRIES, resp.status_code,
+                        resp.text[:200], delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+
+                # 4xx (except 429) are not retryable
+                logger.error(
+                    "Books API non-retryable error: status=%d body=%r params=%s",
+                    resp.status_code, resp.text[:200], safe_params,
+                )
+                raise BooksError(f"Google Books API error {resp.status_code}: {resp.text}")
+
+            except httpx.TimeoutException as exc:
+                delay = 2 ** attempt
+                logger.warning(
+                    "Books API timeout (attempt %d/%d) url=%s — retrying in %ds",
+                    attempt + 1, self.MAX_RETRIES, url, delay,
+                )
+                last_exc = exc
+                await asyncio.sleep(delay)
+
+        raise BooksError(
+            f"Google Books API: max retries ({self.MAX_RETRIES}) exceeded for {url}"
+            + (f" — last error: {last_exc}" if last_exc else "")
+        )
 
     async def get_author_new_books(self, author_id: str, after_date: date) -> list[Book]:
         """Get new books by an author since the given date, filtered to novels/novellas."""

@@ -72,6 +72,7 @@ async def check_tv_creator(creator: TrackedCreator, tmdb: TMDBClient, after_date
 
 async def check_book_creator(creator: TrackedCreator, books: BooksClient, after_date: date):
     """Check for new books from an author."""
+    logger.info("Checking books for author: %s (id=%s)", creator.name, creator.external_id)
     if creator.external_id:
         found_books = await books.get_author_new_books(creator.external_id, after_date)
     else:
@@ -120,16 +121,23 @@ async def run_scan(dry_run: bool = False):
         notifications_queued = 0
 
         for creator in creators:
-            if creator.category == "music":
-                # Tier 3: taste-profile tail — no proactive album/single SMS until discovery is wired.
-                if creator.tier >= 3:
+            try:
+                if creator.category == "music":
+                    # Tier 3: taste-profile tail — no proactive album/single SMS until discovery is wired.
+                    if creator.tier >= 3:
+                        continue
+                    releases = await check_music_creator(creator, spotify, after_date)
+                elif creator.category == "tv":
+                    releases = await check_tv_creator(creator, tmdb, after_date)
+                elif creator.category == "book":
+                    releases = await check_book_creator(creator, books, after_date)
+                else:
                     continue
-                releases = await check_music_creator(creator, spotify, after_date)
-            elif creator.category == "tv":
-                releases = await check_tv_creator(creator, tmdb, after_date)
-            elif creator.category == "book":
-                releases = await check_book_creator(creator, books, after_date)
-            else:
+            except Exception:
+                logger.exception(
+                    "Failed to check creator %r (category=%s, id=%s) — skipping",
+                    creator.name, creator.category, creator.external_id,
+                )
                 continue
 
             for release_data in releases:
