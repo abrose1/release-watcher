@@ -30,7 +30,7 @@ class BooksClient:
     """Google Books API client for author book lookups."""
 
     BASE_URL = "https://www.googleapis.com/books/v1"
-    MAX_RETRIES = 3
+    MAX_RETRIES = 2
 
     def __init__(self, api_key: str | None = None):
         self.api_key = api_key or get_env("GOOGLE_BOOKS_API_KEY")
