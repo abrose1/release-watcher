@@ -33,8 +33,12 @@ async def check_music_creator(creator: TrackedCreator, spotify: SpotifyClient, a
     if not creator.external_id:
         return []
 
+    # Brief pause between Spotify calls — back-to-back requests with no spacing
+    # trip Spotify's short-window burst limiter even at low overall daily volume.
+    await asyncio.sleep(0.5)
     releases = await spotify.get_artist_albums(creator.external_id, after_date)
     if creator.tier in (1, 2):
+        await asyncio.sleep(0.5)
         singles = await spotify.get_artist_new_singles(creator.external_id, after_date)
         releases.extend(singles)
 
