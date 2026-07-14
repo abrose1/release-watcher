@@ -55,6 +55,41 @@ class TestJudgeWatchlistHit:
         assert "genuine" in result.reason.lower() or "not" in result.reason.lower()
 
     @patch("watcher.judge._get_client")
+    def test_recent_announcements_included_in_prompt(self, mock_client_factory):
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _mock_anthropic_response(MOCK_JUDGE_SKIP)
+        mock_client_factory.return_value = mock_client
+
+        judge_watchlist_hit(
+            creator={"name": "Test Artist A", "tier": 1, "category": "music"},
+            release_metadata={"title": "The Great Divide - Album by Test Artist A | Spotify", "type": "announcement", "date": "2026-07-14"},
+            search_results=[{"title": "The Great Divide - Album by Test Artist A | Spotify", "url": "https://open.spotify.com/x", "snippet": ""}],
+            recent_announcements=[
+                {"title": "The Great Divide (Test Artist A album) - Wikipedia", "url": "https://en.wikipedia.org/x", "announced_date": "2026-07-13"},
+            ],
+        )
+
+        prompt_sent = mock_client.messages.create.call_args.kwargs["messages"][0]["content"]
+        assert "already sent to the user" in prompt_sent
+        assert "The Great Divide (Test Artist A album) - Wikipedia" in prompt_sent
+        assert "2026-07-13" in prompt_sent
+
+    @patch("watcher.judge._get_client")
+    def test_no_recent_announcements_shows_none(self, mock_client_factory):
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = _mock_anthropic_response(MOCK_JUDGE_NOTIFY)
+        mock_client_factory.return_value = mock_client
+
+        judge_watchlist_hit(
+            creator={"name": "Test Artist A", "tier": 1, "category": "music"},
+            release_metadata={"title": "New Album", "type": "album", "date": "2026-04-01"},
+            search_results=[],
+        )
+
+        prompt_sent = mock_client.messages.create.call_args.kwargs["messages"][0]["content"]
+        assert "(none)" in prompt_sent
+
+    @patch("watcher.judge._get_client")
     def test_handles_code_block_response(self, mock_client_factory):
         mock_client = MagicMock()
         mock_response = MagicMock()

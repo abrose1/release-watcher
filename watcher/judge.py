@@ -38,6 +38,7 @@ def judge_watchlist_hit(
     creator: dict[str, Any],
     release_metadata: dict[str, Any],
     search_results: list[dict[str, str]],
+    recent_announcements: list[dict[str, Any]] | None = None,
 ) -> JudgeResult:
     """Determine if a detected release is genuine and worth notifying about.
 
@@ -45,6 +46,11 @@ def judge_watchlist_hit(
         creator: Dict with name, tier, category
         release_metadata: Dict with title, type, date from API
         search_results: Top 3 Brave Search results for context
+        recent_announcements: Announcements already notified for this creator
+            recently (title, url, announced_date). Used so the judge can catch
+            "same underlying story, different article" duplicates that a plain
+            hash of title+url would miss (e.g. Brave surfacing a Wikipedia page
+            one day and a Spotify page the next for the same album).
 
     Returns:
         JudgeResult with notify decision, reason, and best link
@@ -56,6 +62,14 @@ def judge_watchlist_hit(
         for r in search_results[:3]
     )
 
+    if recent_announcements:
+        known_context = "\n".join(
+            f"- \"{a.get('title', '')}\" ({a.get('announced_date', 'unknown date')}) — {a.get('url', '')}"
+            for a in recent_announcements
+        )
+    else:
+        known_context = "(none)"
+
     prompt = f"""You are evaluating whether a detected release is genuine and worth notifying the user about.
 
 Creator: {creator['name']} (Tier {creator['tier']}, Category: {creator['category']})
@@ -64,13 +78,17 @@ Release: "{release_metadata.get('title', '')}" (Type: {release_metadata.get('typ
 Web search context:
 {search_context}
 
+Announcements already sent to the user for this creator recently:
+{known_context}
+
 Determine:
 1. Is this a genuine NEW release (not a remaster, compilation, re-edition, deluxe edition, or re-release under a new title)?
 2. Is this a confirmed release/announcement (not just a rumor)?
-3. If genuine and confirmed, what is the best article link from the search results?
+3. Is this describing the SAME underlying release/story as one already listed above (even if the article title, source, or wording is different)? If so, this is a duplicate — do not notify again.
+4. If genuine, confirmed, and NOT a duplicate of an already-sent announcement, what is the best article link from the search results?
 
 Respond in JSON format:
-{{"notify": true/false, "reason": "brief explanation", "best_link": "url or empty string"}}"""
+{{"notify": true/false, "reason": "brief explanation, note if this is a duplicate of an already-sent announcement", "best_link": "url or empty string"}}"""
 
     response = client.messages.create(
         model=MODEL,

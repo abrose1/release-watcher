@@ -59,6 +59,21 @@ async def run_announcement_scan(dry_run: bool = False):
                 creator.name, creator.category, current_year
             )
 
+            recent_announcements = [
+                {
+                    "title": r.title,
+                    "url": r.source_url,
+                    "announced_date": str(r.announced_date) if r.announced_date else "unknown",
+                }
+                for r in (
+                    session.query(Release)
+                    .filter_by(tracked_creator_id=creator.id, type="announcement")
+                    .order_by(Release.announced_date.desc())
+                    .limit(5)
+                    .all()
+                )
+            ]
+
             for result in search_results:
                 ann_hash = compute_announcement_hash(result.title, result.url)
 
@@ -83,6 +98,7 @@ async def run_announcement_scan(dry_run: bool = False):
                         "date": str(date.today()),
                     },
                     search_results=search_dicts,
+                    recent_announcements=recent_announcements,
                 )
 
                 if judge_result.notify:

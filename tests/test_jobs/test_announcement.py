@@ -164,6 +164,62 @@ class TestAnnouncementJob:
     @patch("watcher.jobs.announcement.BraveSearchClient")
     @patch("watcher.jobs.announcement.get_session_factory")
     @patch("watcher.jobs.announcement.get_preferences")
+    async def test_recent_announcements_passed_to_judge(
+        self, mock_prefs, mock_factory, mock_brave_cls,
+        mock_judge, mock_quiet, mock_send, ann_db
+    ):
+        """A same-story article with a different title/URL isn't caught by the hash
+        check, but the judge should be given the creator's recent announcement
+        history so it can catch the duplicate itself."""
+        Session, session = ann_db
+        mock_prefs.return_value = {"tier1_announcement_search": True}
+        mock_factory.return_value = Session
+
+        creator = session.query(TrackedCreator).filter_by(tier=1).first()
+        prior = Release(
+            tracked_creator_id=creator.id,
+            external_release_id="ann_old",
+            title="The Great Divide (Test Artist) - Wikipedia",
+            type="announcement",
+            announced_date=date(2026, 7, 13),
+            source_url="https://en.wikipedia.org/x",
+            announcement_hash="old_hash_different_from_new_result",
+        )
+        session.add(prior)
+        session.commit()
+
+        mock_brave = AsyncMock()
+        mock_brave.search_announcement.return_value = [
+            SearchResult(
+                title="The Great Divide - Album by Test Artist | Spotify",
+                url="https://open.spotify.com/x",
+                snippet="Same album, different source",
+            )
+        ]
+        mock_brave_cls.return_value = mock_brave
+
+        mock_judge.return_value = JudgeResult(notify=False, reason="Duplicate of a previously sent announcement", best_link="")
+
+        from watcher.jobs.announcement import run_announcement_scan
+        await run_announcement_scan(dry_run=False)
+
+        assert mock_judge.call_count == 1
+        recent = mock_judge.call_args.kwargs["recent_announcements"]
+        assert len(recent) == 1
+        assert recent[0]["title"] == "The Great Divide (Test Artist) - Wikipedia"
+        assert recent[0]["announced_date"] == "2026-07-13"
+
+        # judge said this is a duplicate, so no new release/notification should be created
+        releases = session.query(Release).all()
+        assert len(releases) == 1
+        mock_send.assert_not_called()
+
+    @patch("watcher.jobs.announcement.send_sms_to_subscribers")
+    @patch("watcher.jobs.announcement.is_quiet_hours", return_value=False)
+    @patch("watcher.jobs.announcement.judge_watchlist_hit")
+    @patch("watcher.jobs.announcement.BraveSearchClient")
+    @patch("watcher.jobs.announcement.get_session_factory")
+    @patch("watcher.jobs.announcement.get_preferences")
     async def test_dry_run_no_writes(
         self, mock_prefs, mock_factory, mock_brave_cls,
         mock_judge, mock_quiet, mock_send, ann_db
