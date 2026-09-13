@@ -78,13 +78,25 @@ class TestFormatDiscoveryMessage:
             category="music",
             title="New Song",
             creator_name="New Artist",
-            reason="Similar atmospheric style",
+            reason="Similar atmospheric style to your playlist picks",
             link="https://example.com",
         )
-        assert "Rec" in msg
-        assert "Music" in msg
-        assert "New Song" in msg
+        assert "Music you might like" in msg
+        assert '"New Song" by New Artist' in msg
         assert "Similar atmospheric style" in msg
+        assert "https://example.com" in msg
+
+    def test_tv_omits_redundant_creator(self):
+        msg = format_discovery_message(
+            category="tv",
+            title="Similar Series",
+            creator_name="",
+            reason="Same slow-burn tension as shows you track",
+            link="https://example.com/tv",
+        )
+        assert '"Similar Series"' in msg
+        assert " by " not in msg
+        assert "Same slow-burn tension" in msg
 
     def test_reason_omitted_when_empty(self):
         msg = format_discovery_message(
@@ -96,6 +108,7 @@ class TestFormatDiscoveryMessage:
         )
         lines = msg.strip().splitlines()
         assert "https://example.com" in lines[-1]
+        assert len(lines) == 3
 
     def test_link_always_present(self):
         msg = format_discovery_message(
@@ -106,6 +119,18 @@ class TestFormatDiscoveryMessage:
             link="https://example.com/film",
         )
         assert "https://example.com/film" in msg
+
+    def test_truncates_long_messages_but_keeps_link(self):
+        msg = format_discovery_message(
+            category="film",
+            title="A Very Long Movie Title That Keeps Going",
+            creator_name="Director Name",
+            reason="x" * 200,
+            link="https://example.com/film",
+            max_len=160,
+        )
+        assert "https://example.com/film" in msg
+        assert len(msg) <= 160
 
 
 class TestQuietHours:

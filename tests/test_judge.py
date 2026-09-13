@@ -114,6 +114,8 @@ class TestJudgeDiscoveryCandidate:
         mock_client = MagicMock()
         mock_client.messages.create.return_value = _mock_anthropic_response({
             "notify": True,
+            "title": "New Album",
+            "creator": "New Artist",
             "reason": "Similar atmospheric style to user's favorites",
             "best_link": "https://example.com/review",
         })
@@ -126,6 +128,8 @@ class TestJudgeDiscoveryCandidate:
         )
 
         assert result.notify is True
+        assert result.title == "New Album"
+        assert result.creator == "New Artist"
         assert "review score" not in result.reason.lower()
         assert "star rating" not in result.reason.lower()
 

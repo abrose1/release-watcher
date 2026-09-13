@@ -251,20 +251,71 @@ def format_watchlist_message(
     return f"New {type_label} from {creator_name} — \"{title}\"\n{link}"
 
 
+_DISCOVERY_LABELS = {
+    "music": "Music",
+    "film": "Film",
+    "tv": "TV",
+    "book": "Book",
+}
+
+
 def format_discovery_message(
     category: str,
     title: str,
     creator_name: str,
     reason: str,
     link: str,
+    *,
+    max_len: int = 320,
 ) -> str:
-    """Format a discovery rec SMS."""
-    head = f"Rec · {category.title()}"
-    parts = [head, f'"{title}" by {creator_name}']
-    if reason and reason.strip():
-        parts.append(reason.strip())
-    parts.append(link)
-    return "\n".join(parts)
+    """Format a discovery rec SMS with a clear title and taste-fit reason."""
+    label = _DISCOVERY_LABELS.get(category.lower(), category.title())
+    lines = [f"{label} you might like"]
+
+    title = title.strip()
+    creator = creator_name.strip()
+    if title:
+        if (
+            creator
+            and creator.lower() not in {"various", "unknown"}
+            and creator.lower() != title.lower()
+        ):
+            lines.append(f'"{title}" by {creator}')
+        else:
+            lines.append(f'"{title}"')
+    elif creator and creator.lower() not in {"various", "unknown"}:
+        lines.append(creator)
+
+    reason = reason.strip()
+    if reason:
+        lines.append(reason)
+
+    lines.append(link.strip())
+    msg = "\n".join(lines)
+
+    if len(msg) <= max_len:
+        return msg
+
+    # Drop reason first, then truncate title — link is never dropped.
+    if reason:
+        short = "\n".join([lines[0], *lines[1:-2], lines[-1]])
+        if len(short) <= max_len:
+            return short
+
+    head, *rest = lines
+    link_line = rest[-1]
+    body_lines = rest[:-1]
+    if not body_lines:
+        return f"{head}\n{link_line}"[:max_len]
+
+    body = body_lines[0]
+    prefix = f"{head}\n"
+    suffix = f"\n{link_line}"
+    avail = max_len - len(prefix) - len(suffix) - 3
+    if avail > 0 and len(body) > avail:
+        body = body[:avail] + "..."
+    trimmed = f"{prefix}{body}{suffix}"
+    return trimmed if len(trimmed) <= max_len else f"{prefix}{link_line}"[:max_len]
 
 
 # ---------------------------------------------------------------------------

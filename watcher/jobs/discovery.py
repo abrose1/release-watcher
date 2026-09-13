@@ -24,6 +24,23 @@ from watcher.judge import judge_discovery_candidate
 logger = logging.getLogger(__name__)
 
 
+def _discovery_title_creator(
+    result,
+    *,
+    fallback_title: str = "",
+    fallback_creator: str = "",
+    search_dicts: list[dict] | None = None,
+) -> tuple[str, str]:
+    """Resolve display title/creator from judge output with sensible fallbacks."""
+    title = (result.title or fallback_title).strip()
+    creator = (result.creator or fallback_creator).strip()
+
+    if not title and search_dicts:
+        title = search_dicts[0].get("title", "").strip()
+
+    return title, creator
+
+
 def _already_sent(session, external_id: str) -> bool:
     """Check if we already sent a discovery notification for this item."""
     return session.query(DiscoverySent).filter_by(external_id=external_id).first() is not None
@@ -114,14 +131,20 @@ async def discover_music(session, spotify: SpotifyClient, brave: BraveSearchClie
             if _already_sent(session, external_id):
                 continue
 
+            title, creator = _discovery_title_creator(
+                result,
+                fallback_title=f"New music like {artist_name}",
+                fallback_creator=artist_name,
+                search_dicts=search_dicts,
+            )
             message_text = format_discovery_message(
-                "music", result.reason[:40], "Various", "", link
+                "music", title, creator, result.reason, link
             )
             discovery = DiscoverySent(
                 external_id=external_id,
                 category="music",
-                title=result.reason[:100],
-                creator_name="Various",
+                title=title[:100],
+                creator_name=creator[:100] or "Various",
                 sent_at=datetime.now(timezone.utc).replace(tzinfo=None),
             )
             _send_or_queue_discovery(session, message_text, discovery, dry_run)
@@ -168,12 +191,15 @@ async def discover_films(session, tmdb: TMDBClient, brave: BraveSearchClient, dr
 
         if result.notify:
             link = result.best_link or (search_dicts[0]["url"] if search_dicts else "")
-            message_text = format_discovery_message("film", movie.title, "Various", result.reason, link)
+            title, creator = _discovery_title_creator(
+                result, fallback_title=movie.title, search_dicts=search_dicts
+            )
+            message_text = format_discovery_message("film", title, creator, result.reason, link)
             discovery = DiscoverySent(
                 external_id=external_id,
                 category="film",
-                title=movie.title,
-                creator_name="Various",
+                title=title[:100],
+                creator_name=creator[:100] or "Various",
                 sent_at=datetime.now(timezone.utc).replace(tzinfo=None),
             )
             _send_or_queue_discovery(session, message_text, discovery, dry_run)
@@ -220,9 +246,12 @@ async def discover_tv(session, tmdb: TMDBClient, brave: BraveSearchClient, dry_r
             result = judge_discovery_candidate(
                 candidate={
                     "title": show.name,
-                    "creator": show.name,
+                    "creator": "",
                     "category": "tv",
-                    "description": show.overview,
+                    "description": (
+                        f"{show.overview or 'No overview.'} "
+                        f"Suggested because you track {tv_show.name}."
+                    ),
                 },
                 taste_profile_slice=taste_slice,
                 search_results=search_dicts,
@@ -230,12 +259,15 @@ async def discover_tv(session, tmdb: TMDBClient, brave: BraveSearchClient, dry_r
 
             if result.notify:
                 link = result.best_link or (search_dicts[0]["url"] if search_dicts else "")
-                message_text = format_discovery_message("tv", show.name, show.name, result.reason, link)
+                title, _ = _discovery_title_creator(
+                    result, fallback_title=show.name, search_dicts=search_dicts
+                )
+                message_text = format_discovery_message("tv", title, "", result.reason, link)
                 discovery = DiscoverySent(
                     external_id=external_id,
                     category="tv",
-                    title=show.name,
-                    creator_name=show.name,
+                    title=title[:100],
+                    creator_name=tv_show.name[:100],
                     sent_at=datetime.now(timezone.utc).replace(tzinfo=None),
                 )
                 _send_or_queue_discovery(session, message_text, discovery, dry_run)
@@ -285,12 +317,18 @@ async def discover_books(session, brave: BraveSearchClient, dry_run: bool) -> in
             if _already_sent(session, external_id):
                 continue
 
-            message_text = format_discovery_message("book", result.reason[:40], "Various", "", link)
+            title, creator = _discovery_title_creator(
+                result,
+                fallback_title=f"Books like {author.name}",
+                fallback_creator=author.name,
+                search_dicts=search_dicts,
+            )
+            message_text = format_discovery_message("book", title, creator, result.reason, link)
             discovery = DiscoverySent(
                 external_id=external_id,
                 category="book",
-                title=result.reason[:100],
-                creator_name="Various",
+                title=title[:100],
+                creator_name=creator[:100] or "Various",
                 sent_at=datetime.now(timezone.utc).replace(tzinfo=None),
             )
             _send_or_queue_discovery(session, message_text, discovery, dry_run)

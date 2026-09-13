@@ -18,6 +18,8 @@ class JudgeResult:
     notify: bool
     reason: str
     best_link: str
+    title: str = ""
+    creator: str = ""
 
 
 @dataclass
@@ -150,10 +152,10 @@ Film taste description: {film_taste}
 Web search context:
 {search_context}
 
-Primary signal is style and genre similarity to the user's top-scored creators. Do NOT cite review scores or ratings as a reason to notify. If the release is worth surfacing, explain specifically what it has in common with what the user already loves.
+Primary signal is style and genre similarity to the user's top-scored creators. Do NOT cite review scores or ratings as a reason to notify. If the release is worth surfacing, name the specific work and explain what it has in common with what the user already loves.
 
 Respond in JSON format:
-{{"notify": true/false, "reason": "brief explanation of taste similarity", "best_link": "url or empty string"}}"""
+{{"notify": true/false, "title": "specific recommended album, film, show, or book title", "creator": "artist or author name (empty string for TV shows)", "reason": "one short sentence explaining the taste fit — what it shares with favorites", "best_link": "url or empty string"}}"""
 
     response = client.messages.create(
         model=MODEL,
@@ -171,6 +173,8 @@ Respond in JSON format:
             notify=bool(result.get("notify", False)),
             reason=result.get("reason", ""),
             best_link=result.get("best_link", ""),
+            title=result.get("title", ""),
+            creator=result.get("creator", ""),
         )
     except (json.JSONDecodeError, IndexError, KeyError) as e:
         raise JudgeError(f"Failed to parse judge response: {e}")
