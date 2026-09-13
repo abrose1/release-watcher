@@ -12,13 +12,6 @@ def _clear_cfg_cache(request):
     config.reset_config_cache()
 
 
-def test_spotify_env_override_comma(monkeypatch):
-    monkeypatch.setenv("SPOTIFY_SEED_PLAYLIST_IDS", "abc, ,def ")
-    monkeypatch.delenv("SMS_GREETING_NAME", raising=False)
-    monkeypatch.delenv("SMS_FIRST_NAME", raising=False)
-    assert config.get_spotify_seed_playlist_ids() == ["abc", "def"]
-
-
 def test_sms_greeting_env_override(monkeypatch):
     monkeypatch.setenv("SMS_GREETING_NAME", "  Taylor  ")
     assert config.get_sms_first_name() == "Taylor"

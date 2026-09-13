@@ -12,7 +12,7 @@ A scheduled agent that monitors new releases across books, music, TV, and movies
 
 1. **Daily scan** — Railway Cron checks each tracked creator for new releases via Spotify, TMDB, and Google Books APIs
 2. **Daily Tier 1 announcement scan** — Brave Search for each Tier 1 creator (releases / seasons). *Stretch:* concerts or tours for Tier 1 music acts.
-3. **Weekly discovery** — finds new releases matching your taste profile across all four categories
+3. **Weekly discovery** — finds new releases matching your taste profile across all four categories. Music discovery seeds from your top tier 1/2 tracked artists (by profile score), not external playlists.
 4. **Anthropic judge** — decides if each candidate is worth a notification based on taste fit, not review scores
 5. **Web search** — fires on every hit to find the best article/review link for the SMS
 6. **Twilio SMS** — sends a short formatted message with the link
@@ -95,7 +95,6 @@ Tracked **`config.yaml`** is intentionally **generic** so the repo stays safe to
    | Variable | Effect |
    |----------|--------|
    | `SMS_GREETING_NAME` or `SMS_FIRST_NAME` | Sets `preferences.sms_first_name` for SMS greetings. |
-   | `SPOTIFY_SEED_PLAYLIST_IDS` | Comma-separated Spotify **user-owned mirror** playlist IDs. |
    | `FILM_TASTE` | Full film-taste prose for the judge (multiline OK in Railway / `.env`). |
    | `FILM_TMDB_GENRE_IDS` | e.g. `18,53,878` → Drama, Thriller, Sci-Fi-style discovery seeding. |
    | `SMS_QUIET_TIMEZONE` | IANA TZ for `preferences.quiet_hours.timezone`. |
@@ -154,7 +153,7 @@ See `.env.example` for the full list.
 | `TASTE_PROFILE_DATABASE_URL` | **Public** URL of taste-profile Railway Postgres |
 | `SPOTIFY_CLIENT_ID` | Same Spotify app as taste-profile |
 | `SPOTIFY_CLIENT_SECRET` | Same Spotify app as taste-profile |
-| `SPOTIFY_REFRESH_TOKEN` | **Required for `weekly-discovery-cron` only.** User OAuth token for playlist reads (Spotify post-Feb 2026 requires user auth on `/playlists/{id}/items`). Generate once with `python -m intake.playlists --auth` in the taste-profile repo, then copy to the `weekly-discovery-cron` Railway service. The `daily-scan` service does **not** need this. |
+| `SPOTIFY_REFRESH_TOKEN` | Not required by any watcher service. User OAuth token only needed by the taste-profile repo's playlist intake script. |
 | `TMDB_API_KEY` | Free at themoviedb.org |
 | `GOOGLE_BOOKS_API_KEY` | Free at console.cloud.google.com |
 | `BRAVE_SEARCH_API_KEY` | Free tier: 2000 queries/month |

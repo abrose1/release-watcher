@@ -1,7 +1,7 @@
 # Checked-in defaults for open-source clones. Personalize safely:
 #
 # • Add config.override.yaml (see config.override.example.yaml) — gitignored; not on GitHub.
-# • Or set Railway / shell vars: SMS_GREETING_NAME, SPOTIFY_SEED_PLAYLIST_IDS, FILM_TASTE,
+# • Or set Railway / shell vars: SMS_GREETING_NAME, FILM_TASTE,
 #   FILM_TMDB_GENRE_IDS, SMS_QUIET_TIMEZONE — see README and .env.example.
 #
 preferences:
@@ -20,10 +20,6 @@ preferences:
 
   discovery_frequency: weekly
   tier1_announcement_search: true
-
-  # User-owned Spotify playlist IDs for discovery seeds (Wrapped-style 37i9dQZF* playlists
-  # are not reachable via Spotify Web API). Leave empty until you configure your own mirrors.
-  spotify_seed_playlist_ids: []
 
 watchlist:
   tv:
