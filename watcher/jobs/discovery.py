@@ -9,14 +9,13 @@ import logging
 import sys
 from datetime import datetime, date, timedelta, timezone
 
-from watcher.config import get_film_taste, get_film_genre_ids, get_spotify_seed_playlist_ids
+from watcher.config import get_film_taste, get_film_genre_ids
 from watcher.db import get_session_factory
 from watcher.models import TrackedCreator, DiscoverySent, NotificationQueue
 from watcher.notify import (
     format_discovery_message, send_sms_to_subscribers,
     is_quiet_hours, next_send_after,
 )
-from watcher.sources.spotify import SpotifyClient
 from watcher.sources.tmdb import TMDBClient
 from watcher.sources.brave import BraveSearchClient
 from watcher.judge import judge_discovery_candidate
@@ -68,48 +67,39 @@ def _send_or_queue_discovery(session, message_text: str, discovery_sent: Discove
         send_sms_to_subscribers(message_text, dry_run=dry_run)
 
 
-async def discover_music(session, spotify: SpotifyClient, brave: BraveSearchClient, dry_run: bool) -> int:
-    """Music discovery seeded from Spotify top-songs playlists.
+async def discover_music(session, brave: BraveSearchClient, dry_run: bool) -> int:
+    """Music discovery seeded from top tracked music artists.
 
-    Aggregates tracks across all configured playlists, extracts unique artists
-    not already in TrackedCreators, then uses Brave Search to find new similar music.
+    Queries tier 1/2 music TrackedCreators ordered by profile score descending,
+    then uses Brave Search to find similar new music for each seed artist.
     """
-    playlist_ids = get_spotify_seed_playlist_ids()
-    if not playlist_ids:
-        logger.warning("No spotify_seed_playlist_ids configured — skipping music discovery")
+    top_artists = (
+        session.query(TrackedCreator)
+        .filter(TrackedCreator.category == "music", TrackedCreator.tier <= 2)
+        .order_by(TrackedCreator.profile_score_at_sync.desc())
+        .limit(5)
+        .all()
+    )
+
+    if not top_artists:
+        logger.warning("No tier 1/2 music creators found — skipping music discovery")
         return 0
 
-    tracked_names = {
-        c.name.lower()
-        for c in session.query(TrackedCreator).filter(TrackedCreator.category == "music").all()
-    }
-
-    # Collect unique artist names across all playlists, preserving order of first appearance
-    seen: set[str] = set()
-    seed_artists: list[str] = []
-    for playlist_id in playlist_ids:
-        tracks = await spotify.get_playlist_tracks(playlist_id)
-        for track in tracks:
-            for artist in track.artists:
-                key = artist.lower()
-                if key not in seen and key not in tracked_names:
-                    seen.add(key)
-                    seed_artists.append(artist)
-
-    if not seed_artists:
-        return 0
-
-    # Sample up to 5 artists spread across the combined pool
-    step = max(1, len(seed_artists) // 5)
-    seeds = seed_artists[::step][:5]
-
+    top_names = [a.name for a in top_artists]
     sent = 0
-    for artist_name in seeds:
+
+    for artist in top_artists:
+        artist_name = artist.name
+        external_id = f"music_disc_{artist_name}_{date.today().isoformat()}"
+
+        if _already_sent(session, external_id):
+            continue
+
         search_results = await brave.search_similar_music(artist_name)
         search_dicts = [{"title": r.title, "url": r.url, "snippet": r.snippet} for r in search_results]
 
         taste_slice = {
-            "top_creators": seed_artists[:10],
+            "top_creators": top_names,
             "film_taste": "",
         }
 
@@ -118,7 +108,7 @@ async def discover_music(session, spotify: SpotifyClient, brave: BraveSearchClie
                 "title": f"Music similar to {artist_name}",
                 "creator": "Various",
                 "category": "music",
-                "description": f"New music discovery based on playlist seed artist: {artist_name}",
+                "description": f"New music discovery based on top tracked artist: {artist_name}",
             },
             taste_profile_slice=taste_slice,
             search_results=search_dicts,
@@ -126,11 +116,6 @@ async def discover_music(session, spotify: SpotifyClient, brave: BraveSearchClie
 
         if result.notify:
             link = result.best_link or (search_dicts[0]["url"] if search_dicts else "")
-            external_id = f"music_disc_{artist_name}_{date.today().isoformat()}"
-
-            if _already_sent(session, external_id):
-                continue
-
             title, creator = _discovery_title_creator(
                 result,
                 fallback_title=f"New music like {artist_name}",
@@ -344,12 +329,11 @@ async def run_discovery(dry_run: bool = False):
     session_factory = get_session_factory()
     session = session_factory()
 
-    spotify = SpotifyClient()
     tmdb = TMDBClient()
     brave = BraveSearchClient()
 
     try:
-        music_sent = await discover_music(session, spotify, brave, dry_run)
+        music_sent = await discover_music(session, brave, dry_run)
         film_sent = await discover_films(session, tmdb, brave, dry_run)
         tv_sent = await discover_tv(session, tmdb, brave, dry_run)
         book_sent = await discover_books(session, brave, dry_run)

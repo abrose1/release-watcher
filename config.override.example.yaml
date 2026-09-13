@@ -10,9 +10,6 @@ preferences:
   quiet_hours:
     timezone: "America/Los_Angeles"
 
-  # spotify_seed_playlist_ids:
-  #   - your_user_owned_mirror_playlist_id_here
-
 watchlist:
   tv:
     # shows:

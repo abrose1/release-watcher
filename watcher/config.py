@@ -27,12 +27,6 @@ def _apply_env_preferences_overrides(prefs: dict[str, Any]) -> None:
     if name:
         prefs["sms_first_name"] = name
 
-    pl_raw = os.environ.get("SPOTIFY_SEED_PLAYLIST_IDS") or ""
-    if pl_raw.strip():
-        prefs["spotify_seed_playlist_ids"] = [
-            x.strip() for x in pl_raw.split(",") if x.strip()
-        ]
-
     film_taste = os.environ.get("FILM_TASTE")
     if film_taste:
         prefs["film_taste"] = film_taste.strip()
@@ -106,10 +100,6 @@ def get_film_taste() -> str:
 
 def get_film_genre_ids() -> list[int]:
     return get_preferences().get("film_tmdb_genre_ids", [])
-
-
-def get_spotify_seed_playlist_ids() -> list[str]:
-    return get_preferences().get("spotify_seed_playlist_ids", [])
 
 
 def get_env(name: str, required: bool = True) -> str | None:

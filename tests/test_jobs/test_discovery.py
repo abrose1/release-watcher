@@ -9,7 +9,6 @@ from sqlalchemy.orm import sessionmaker
 
 from watcher.models import Base, TrackedCreator, DiscoverySent, NotificationQueue
 from watcher.judge import JudgeResult
-from watcher.sources.spotify import PlaylistTrack
 from watcher.sources.tmdb import Movie, TVShow
 from watcher.sources.brave import SearchResult
 
@@ -41,82 +40,105 @@ class TestMusicDiscovery:
     @patch("watcher.jobs.discovery.send_sms_to_subscribers")
     @patch("watcher.jobs.discovery.is_quiet_hours", return_value=False)
     @patch("watcher.jobs.discovery.judge_discovery_candidate")
-    @patch("watcher.jobs.discovery.get_spotify_seed_playlist_ids", return_value=["test_playlist"])
-    async def test_music_discovery_flow(
-        self, mock_playlist_ids, mock_judge, mock_quiet, mock_send, disc_session
+    async def test_seeds_from_top_tracked_artists(
+        self, mock_judge, mock_quiet, mock_send, disc_session
     ):
-        mock_spotify = AsyncMock()
-        mock_spotify.get_playlist_tracks.return_value = [
-            PlaylistTrack(id="t1", name="Song One", artists=["New Artist"]),
-        ]
-
+        """Seeds Brave search from tier 1/2 music TrackedCreators, not playlist artists."""
         mock_brave = AsyncMock()
         mock_brave.search_similar_music.return_value = [
             SearchResult(title="New Artist Debut", url="https://example.com/music", snippet="Sounds great")
         ]
-
         mock_judge.return_value = JudgeResult(
             notify=True, reason="Similar vibe", best_link="https://example.com/music"
         )
 
         from watcher.jobs.discovery import discover_music
-        sent = await discover_music(disc_session, mock_spotify, mock_brave, dry_run=False)
+        sent = await discover_music(disc_session, mock_brave, dry_run=False)
 
         assert sent == 1
-        mock_spotify.get_playlist_tracks.assert_called_once_with("test_playlist")
+        # The DB fixture has "Top Artist" (tier=1) — verify it was the seed
+        mock_brave.search_similar_music.assert_called_once_with("Top Artist")
         discovery = disc_session.query(DiscoverySent).filter_by(category="music").all()
         assert len(discovery) == 1
 
-    @patch("watcher.jobs.discovery.judge_discovery_candidate")
-    @patch("watcher.jobs.discovery.get_spotify_seed_playlist_ids", return_value=["test_playlist"])
-    async def test_skips_already_tracked_artists_as_seeds(
-        self, mock_playlist_ids, mock_judge, disc_session
-    ):
-        """Artists already in TrackedCreators should be skipped as seeds."""
-        mock_spotify = AsyncMock()
-        mock_spotify.get_playlist_tracks.return_value = [
-            PlaylistTrack(id="t1", name="Song", artists=["Top Artist"]),
-        ]
+    async def test_no_music_creators_returns_zero(self, disc_session):
+        """Returns 0 when no tier 1/2 music creators exist in the DB."""
+        disc_session.query(TrackedCreator).filter_by(category="music").delete()
+        disc_session.commit()
+
         mock_brave = AsyncMock()
 
         from watcher.jobs.discovery import discover_music
-        sent = await discover_music(disc_session, mock_spotify, mock_brave, dry_run=False)
+        sent = await discover_music(disc_session, mock_brave, dry_run=False)
+
+        assert sent == 0
+        mock_brave.search_similar_music.assert_not_called()
+
+    @patch("watcher.jobs.discovery.judge_discovery_candidate")
+    async def test_skips_tier_3_music_creators(self, mock_judge, disc_session):
+        """Tier 3 (and above) music creators are excluded from seeding."""
+        disc_session.query(TrackedCreator).filter_by(category="music").delete()
+        disc_session.add(TrackedCreator(
+            category="music", name="Tier3 Artist", tier=3, profile_score_at_sync=50.0
+        ))
+        disc_session.commit()
+
+        mock_brave = AsyncMock()
+
+        from watcher.jobs.discovery import discover_music
+        sent = await discover_music(disc_session, mock_brave, dry_run=False)
 
         assert sent == 0
         mock_judge.assert_not_called()
 
-    @patch("watcher.jobs.discovery.get_spotify_seed_playlist_ids", return_value=[])
-    async def test_no_playlist_configured(self, mock_playlist_ids, disc_session):
-        """Returns 0 immediately when no playlist IDs are configured."""
-        mock_spotify = AsyncMock()
-        mock_brave = AsyncMock()
-
-        from watcher.jobs.discovery import discover_music
-        sent = await discover_music(disc_session, mock_spotify, mock_brave, dry_run=False)
-
-        assert sent == 0
-        mock_spotify.get_playlist_tracks.assert_not_called()
-
     @patch("watcher.jobs.discovery.judge_discovery_candidate")
-    @patch("watcher.jobs.discovery.get_spotify_seed_playlist_ids", return_value=["test_playlist"])
-    async def test_music_discovery_no_results_when_judge_skips(
-        self, mock_playlist_ids, mock_judge, disc_session
-    ):
-        mock_spotify = AsyncMock()
-        mock_spotify.get_playlist_tracks.return_value = [
-            PlaylistTrack(id="t1", name="Song", artists=["New Artist"]),
-        ]
+    async def test_judge_decline_returns_zero(self, mock_judge, disc_session):
+        """Returns 0 when the judge declines every candidate."""
         mock_brave = AsyncMock()
         mock_brave.search_similar_music.return_value = [
             SearchResult(title="Something", url="https://example.com", snippet="")
         ]
-
         mock_judge.return_value = JudgeResult(notify=False, reason="Not relevant", best_link="")
 
         from watcher.jobs.discovery import discover_music
-        sent = await discover_music(disc_session, mock_spotify, mock_brave, dry_run=False)
+        sent = await discover_music(disc_session, mock_brave, dry_run=False)
 
         assert sent == 0
+
+    @patch("watcher.jobs.discovery.send_sms_to_subscribers")
+    @patch("watcher.jobs.discovery.is_quiet_hours", return_value=False)
+    @patch("watcher.jobs.discovery.judge_discovery_candidate")
+    async def test_already_sent_skips_to_next_seed(
+        self, mock_judge, mock_quiet, mock_send, disc_session
+    ):
+        """When the top seed was already sent today, the next ranked artist is tried."""
+        second = TrackedCreator(
+            category="music", name="Second Artist", tier=1, profile_score_at_sync=80.0
+        )
+        disc_session.add(second)
+        disc_session.add(DiscoverySent(
+            external_id=f"music_disc_Top Artist_{date.today().isoformat()}",
+            category="music",
+            title="Already Sent",
+            creator_name="Top Artist",
+            sent_at=datetime.now().replace(tzinfo=None),
+        ))
+        disc_session.commit()
+
+        mock_brave = AsyncMock()
+        mock_brave.search_similar_music.return_value = [
+            SearchResult(title="New Sound", url="https://example.com/music2", snippet="")
+        ]
+        mock_judge.return_value = JudgeResult(
+            notify=True, reason="Good", best_link="https://example.com/music2"
+        )
+
+        from watcher.jobs.discovery import discover_music
+        sent = await discover_music(disc_session, mock_brave, dry_run=False)
+
+        assert sent == 1
+        # Top Artist was already sent — Second Artist (score=80) should be the seed
+        mock_brave.search_similar_music.assert_called_once_with("Second Artist")
 
 
 class TestFilmDiscovery:
@@ -203,27 +225,19 @@ class TestBookDiscovery:
 class TestDiscoveryDryRun:
     @patch("watcher.jobs.discovery.send_sms_to_subscribers")
     @patch("watcher.jobs.discovery.judge_discovery_candidate")
-    @patch("watcher.jobs.discovery.get_spotify_seed_playlist_ids", return_value=["test_playlist"])
-    async def test_dry_run_no_db_writes(
-        self, mock_playlist_ids, mock_judge, mock_send, disc_session
-    ):
-        mock_spotify = AsyncMock()
-        mock_spotify.get_playlist_tracks.return_value = [
-            PlaylistTrack(id="t1", name="Song", artists=["New Artist"]),
-        ]
+    async def test_dry_run_no_db_writes(self, mock_judge, mock_send, disc_session):
+        """Dry-run mode: judge approves but nothing is written to DB and no SMS is sent."""
         mock_brave = AsyncMock()
         mock_brave.search_similar_music.return_value = [
             SearchResult(title="New Sound", url="https://example.com", snippet="")
         ]
-
         mock_judge.return_value = JudgeResult(
             notify=True, reason="Good", best_link="https://example.com"
         )
 
         from watcher.jobs.discovery import discover_music
-        sent = await discover_music(disc_session, mock_spotify, mock_brave, dry_run=True)
+        sent = await discover_music(disc_session, mock_brave, dry_run=True)
 
         assert sent == 1
-        discovery = disc_session.query(DiscoverySent).all()
-        assert len(discovery) == 0
+        assert disc_session.query(DiscoverySent).count() == 0
         mock_send.assert_not_called()
