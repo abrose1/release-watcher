@@ -157,8 +157,9 @@ class TestTVDiscovery:
     @patch("watcher.jobs.discovery.judge_discovery_candidate")
     async def test_tv_discovery_flow(self, mock_judge, mock_quiet, mock_send, disc_session):
         mock_tmdb = AsyncMock()
+        recent_date = (date.today() - timedelta(days=30)).isoformat()
         mock_tmdb.get_similar_series.return_value = [
-            TVShow(id=55555, name="Similar Series", first_air_date="2026-04-01",
+            TVShow(id=55555, name="Similar Series", first_air_date=recent_date,
                    overview="A similar show")
         ]
 

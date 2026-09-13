@@ -1,4 +1,8 @@
-"""Spotify API client using Client Credentials flow."""
+"""Spotify API client with dual-auth support.
+
+- Client Credentials (machine-to-machine) for artist album/single endpoints.
+- Refresh-token user OAuth for playlist-item reads (required by Spotify post-Feb 2026).
+"""
 
 import asyncio
 import logging
@@ -37,10 +41,13 @@ class PlaylistTrack:
 
 
 class SpotifyClient:
-    """Spotify API client using Client Credentials (machine-to-machine) auth.
+    """Spotify API client with dual-auth support.
 
-    Suitable for all public endpoints (artist albums, singles, search).
-    Does not require a refresh token or user authorization.
+    - Artist album/single endpoints use Client Credentials (no user login required).
+    - Playlist-item reads use a user access token obtained via the refresh-token grant
+      (``grant_type=refresh_token``). Set ``SPOTIFY_REFRESH_TOKEN`` in the environment;
+      generate it once from the taste-profile repo with
+      ``python -m intake.playlists --auth`` (redirect: http://127.0.0.1:8888/callback).
     """
 
     BASE_URL = "https://api.spotify.com/v1"
@@ -53,11 +60,24 @@ class SpotifyClient:
         self,
         client_id: str | None = None,
         client_secret: str | None = None,
+        refresh_token: str | None = None,
     ):
         self.client_id = client_id or get_env("SPOTIFY_CLIENT_ID")
         self.client_secret = client_secret or get_env("SPOTIFY_CLIENT_SECRET")
+        # Optional: only required for playlist reads. Read from env; do not raise
+        # at construction time so the daily-scan service (no playlist calls) can
+        # start without the var set.
+        self.refresh_token = refresh_token or get_env("SPOTIFY_REFRESH_TOKEN", required=False)
+        # Client-credentials token cache
         self._access_token: str | None = None
         self._token_expires_at: float = 0.0
+        # User-OAuth token cache (populated from refresh_token on first playlist call)
+        self._user_access_token: str | None = None
+        self._user_token_expires_at: float = 0.0
+
+    # ------------------------------------------------------------------ #
+    # Token helpers                                                        #
+    # ------------------------------------------------------------------ #
 
     def _token_is_valid(self) -> bool:
         return (
@@ -65,7 +85,14 @@ class SpotifyClient:
             and time.monotonic() < self._token_expires_at - self._TOKEN_EXPIRY_BUFFER
         )
 
+    def _user_token_is_valid(self) -> bool:
+        return (
+            self._user_access_token is not None
+            and time.monotonic() < self._user_token_expires_at - self._TOKEN_EXPIRY_BUFFER
+        )
+
     async def _get_token(self) -> str:
+        """Return a valid client-credentials access token, refreshing if needed."""
         if self._token_is_valid():
             return self._access_token
 
@@ -84,8 +111,48 @@ class SpotifyClient:
             self._token_expires_at = time.monotonic() + body.get("expires_in", 3600)
             return self._access_token
 
+    async def _get_user_token(self) -> str:
+        """Return a valid user access token, refreshing via refresh_token grant if needed.
+
+        Raises ``SpotifyError`` with actionable instructions if ``SPOTIFY_REFRESH_TOKEN``
+        is not configured — the weekly-discovery service needs it; the daily-scan does not.
+        """
+        if not self.refresh_token:
+            raise SpotifyError(
+                "SPOTIFY_REFRESH_TOKEN is not set. "
+                "Playlist reads require a user access token obtained via OAuth. "
+                "Generate one with `python -m intake.playlists --auth` in the "
+                "taste-profile repo (redirect: http://127.0.0.1:8888/callback), "
+                "then set SPOTIFY_REFRESH_TOKEN on the weekly-discovery-cron service."
+            )
+        if self._user_token_is_valid():
+            return self._user_access_token
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                self.TOKEN_URL,
+                data={
+                    "grant_type": "refresh_token",
+                    "refresh_token": self.refresh_token,
+                },
+                auth=(self.client_id, self.client_secret),
+            )
+            if resp.status_code != 200:
+                raise SpotifyError(
+                    f"Failed to exchange refresh_token for user access token: "
+                    f"{resp.status_code} {resp.text}"
+                )
+            body = resp.json()
+            self._user_access_token = body["access_token"]
+            self._user_token_expires_at = time.monotonic() + body.get("expires_in", 3600)
+            return self._user_access_token
+
+    # ------------------------------------------------------------------ #
+    # HTTP helpers                                                         #
+    # ------------------------------------------------------------------ #
+
     async def _request(self, path: str, params: dict | None = None) -> Any:
-        """Make an authenticated GET request with retry on rate-limit."""
+        """Authenticated GET using client-credentials token; retries on rate-limit."""
         for attempt in range(self.MAX_RETRIES):
             token = await self._get_token()
             async with httpx.AsyncClient() as client:
@@ -114,6 +181,41 @@ class SpotifyClient:
                 return resp.json()
 
         raise SpotifyError("Max retries exceeded")
+
+    async def _user_request(self, path: str, params: dict | None = None) -> Any:
+        """Authenticated GET using user OAuth token (refresh-token grant); retries on rate-limit."""
+        for attempt in range(self.MAX_RETRIES):
+            token = await self._get_user_token()
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    f"{self.BASE_URL}{path}",
+                    headers={"Authorization": f"Bearer {token}"},
+                    params=params,
+                )
+                if resp.status_code == 401:
+                    # Clear cached user token and re-exchange on next attempt
+                    self._user_access_token = None
+                    continue
+                if resp.status_code == 429:
+                    raw_retry = int(resp.headers.get("Retry-After", 2 ** attempt))
+                    retry_after = min(raw_retry, 30)
+                    logger.warning(
+                        "Spotify rate-limited (attempt %d/%d): Retry-After=%ds (capped to %ds)",
+                        attempt + 1, self.MAX_RETRIES, raw_retry, retry_after,
+                    )
+                    await asyncio.sleep(retry_after)
+                    continue
+                if resp.status_code != 200:
+                    raise SpotifyError(
+                        f"Spotify API error {resp.status_code}: {resp.text}"
+                    )
+                return resp.json()
+
+        raise SpotifyError("Max retries exceeded")
+
+    # ------------------------------------------------------------------ #
+    # Public API methods                                                   #
+    # ------------------------------------------------------------------ #
 
     async def get_artist_albums(self, spotify_id: str, after_date: date) -> list[Album]:
         """Get albums by an artist released on or after the given date."""
@@ -158,24 +260,23 @@ class SpotifyClient:
         return singles
 
     async def get_playlist_tracks(self, playlist_id: str) -> list[PlaylistTrack]:
-        """Fetch all tracks from a public playlist via the /items endpoint.
+        """Fetch all tracks from a playlist via the /items endpoint.
 
-        Uses Client Credentials. Should work for public user-owned playlists;
-        will not work for Spotify's algorithmic / editorial playlists (the
-        `37i9dQZF*` namespace), which became inaccessible to new third-party
-        Web API apps as of Nov 2024.
+        Requires a user access token (``SPOTIFY_REFRESH_TOKEN`` env var) because
+        Spotify's Get Playlist Items endpoint no longer accepts client-credentials
+        tokens for playlists the app user owns (post-Feb 2026 Web API change).
 
-        Uses explicit `offset`-based pagination — the `next` link returned by
-        `/playlists/{id}/items` does not advance the offset on Spotify's current
+        Uses explicit ``offset``-based pagination — the ``next`` link returned by
+        ``/playlists/{id}/items`` does not advance the offset on Spotify's current
         API and will infinitely repeat page 1 if followed. Each entry uses an
-        `item` wrapper (not the legacy `track` wrapper from `/tracks`).
+        ``item`` wrapper (not the legacy ``track`` wrapper from ``/tracks``).
         """
         tracks: list[PlaylistTrack] = []
         offset = 0
         limit = 100
 
         while True:
-            data = await self._request(
+            data = await self._user_request(
                 f"/playlists/{playlist_id}/items",
                 params={
                     "limit": limit,

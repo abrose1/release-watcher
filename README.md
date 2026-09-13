@@ -152,8 +152,9 @@ See `.env.example` for the full list.
 |-----|-------------|
 | `DATABASE_URL` | This repo's Railway Postgres |
 | `TASTE_PROFILE_DATABASE_URL` | **Public** URL of taste-profile Railway Postgres |
-| `SPOTIFY_CLIENT_ID` | Same Spotify app as taste-profile (Client Credentials only — no refresh token needed here) |
+| `SPOTIFY_CLIENT_ID` | Same Spotify app as taste-profile |
 | `SPOTIFY_CLIENT_SECRET` | Same Spotify app as taste-profile |
+| `SPOTIFY_REFRESH_TOKEN` | **Required for `weekly-discovery-cron` only.** User OAuth token for playlist reads (Spotify post-Feb 2026 requires user auth on `/playlists/{id}/items`). Generate once with `python -m intake.playlists --auth` in the taste-profile repo, then copy to the `weekly-discovery-cron` Railway service. The `daily-scan` service does **not** need this. |
 | `TMDB_API_KEY` | Free at themoviedb.org |
 | `GOOGLE_BOOKS_API_KEY` | Free at console.cloud.google.com |
 | `BRAVE_SEARCH_API_KEY` | Free tier: 2000 queries/month |
@@ -176,7 +177,7 @@ release-watcher/
 │   │   ├── announcement.py    # Daily Tier 1 Brave Search scan
 │   │   └── discovery.py       # Weekly discovery
 │   ├── sources/
-│   │   ├── spotify.py         # Spotify client (Client Credentials)
+│   │   ├── spotify.py         # Spotify client (Client Credentials + user OAuth)
 │   │   ├── tmdb.py            # TMDB client
 │   │   ├── books.py           # Google Books client
 │   │   └── brave.py           # Brave Search client
