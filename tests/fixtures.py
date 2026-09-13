@@ -51,6 +51,12 @@ MOCK_SPOTIFY_TOKEN_RESPONSE = {
     "expires_in": 3600,
 }
 
+MOCK_SPOTIFY_USER_TOKEN_RESPONSE = {
+    "access_token": "test_user_access_token",
+    "token_type": "Bearer",
+    "expires_in": 3600,
+}
+
 MOCK_SPOTIFY_PLAYLIST_RESPONSE = {
     "items": [
         {
