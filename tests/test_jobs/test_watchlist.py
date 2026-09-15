@@ -8,7 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from watcher.models import Base, TrackedCreator, Release, NotificationQueue
-from watcher.judge import JudgeResult
+from watcher.judge import JudgeResult, JudgeError
 from watcher.sources.spotify import Album
 from watcher.sources.brave import SearchResult
 
@@ -217,6 +217,62 @@ class TestWatchlistJob:
         assert len(queue_items) == 1
         assert queue_items[0].priority == 10
         mock_send.assert_not_called()
+
+    @patch("watcher.jobs.watchlist.send_sms_to_subscribers")
+    @patch("watcher.jobs.watchlist.is_quiet_hours", return_value=False)
+    @patch("watcher.jobs.watchlist.flush_queue")
+    @patch("watcher.jobs.watchlist.judge_watchlist_hit")
+    @patch("watcher.jobs.watchlist.BraveSearchClient")
+    @patch("watcher.jobs.watchlist.BooksClient")
+    @patch("watcher.jobs.watchlist.TMDBClient")
+    @patch("watcher.jobs.watchlist.SpotifyClient")
+    @patch("watcher.jobs.watchlist.get_session_factory")
+    async def test_judge_error_skips_release_scan_continues(
+        self, mock_factory, mock_spotify_cls, mock_tmdb_cls, mock_books_cls,
+        mock_brave_cls, mock_judge, mock_flush, mock_quiet, mock_send, job_db,
+    ):
+        """A JudgeError on one release must not abort the whole scan (Sep-14 crash)."""
+        Session, session = job_db
+        mock_factory.return_value = Session
+
+        album_ok = Album(
+            id="album_ok", name="Good Album", release_date="2026-09-01",
+            album_type="album", artists=[{"name": "Test Artist"}],
+            spotify_url="https://spotify.com/album_ok",
+        )
+        album_bad = Album(
+            id="album_bad", name="Bad Response Album", release_date="2026-09-02",
+            album_type="album", artists=[{"name": "Test Artist"}],
+            spotify_url="https://spotify.com/album_bad",
+        )
+
+        mock_spotify = AsyncMock()
+        mock_spotify.get_artist_albums.return_value = [album_bad, album_ok]
+        mock_spotify.get_artist_new_singles.return_value = []
+        mock_spotify_cls.return_value = mock_spotify
+        mock_tmdb_cls.return_value = AsyncMock()
+        mock_books_cls.return_value = AsyncMock()
+
+        mock_brave = AsyncMock()
+        mock_brave.search_release.return_value = [
+            SearchResult(title="Review", url="https://example.com", snippet="")
+        ]
+        mock_brave_cls.return_value = mock_brave
+
+        # First call (album_bad) raises JudgeError; second call (album_ok) succeeds.
+        mock_judge.side_effect = [
+            JudgeError("Failed to parse judge response: Extra data: line 6 column 1 (char 616)"),
+            JudgeResult(notify=True, reason="Genuine release", best_link="https://example.com"),
+        ]
+
+        from watcher.jobs.watchlist import run_scan
+        await run_scan(dry_run=False)
+
+        # Scan must complete: the good album is written and notified.
+        releases = session.query(Release).all()
+        assert len(releases) == 1
+        assert releases[0].external_release_id == "album_ok"
+        mock_send.assert_called_once()
 
 
 class TestMusicTierWatchlist:

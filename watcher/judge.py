@@ -9,6 +9,27 @@ from anthropic import Anthropic
 from watcher.config import get_env
 
 
+def _extract_json(text: str) -> Any:
+    """Extract the first JSON value from model output, tolerating trailing text.
+
+    Claude occasionally appends an explanation after the JSON object.
+    ``json.loads`` raises "Extra data" in that case; ``raw_decode`` stops at
+    the end of the first complete value and ignores whatever follows.
+    """
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+    # Find where the first JSON object/array begins (skip any leading prose)
+    start = next((i for i, c in enumerate(text) if c in ("{", "[")), None)
+    if start is None:
+        raise JudgeError("Failed to parse judge response: no JSON object found in response")
+    try:
+        result, _ = json.JSONDecoder().raw_decode(text, start)
+        return result
+    except (json.JSONDecodeError, ValueError) as e:
+        raise JudgeError(f"Failed to parse judge response: {e}")
+
+
 class JudgeError(Exception):
     pass
 
@@ -100,16 +121,15 @@ Respond in JSON format:
 
     try:
         text = response.content[0].text
-        text = text.strip()
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-        result = json.loads(text)
+        result = _extract_json(text)
         return JudgeResult(
             notify=bool(result.get("notify", False)),
             reason=result.get("reason", ""),
             best_link=result.get("best_link", ""),
         )
-    except (json.JSONDecodeError, IndexError, KeyError) as e:
+    except JudgeError:
+        raise
+    except (IndexError, KeyError) as e:
         raise JudgeError(f"Failed to parse judge response: {e}")
 
 
@@ -165,10 +185,7 @@ Respond in JSON format:
 
     try:
         text = response.content[0].text
-        text = text.strip()
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-        result = json.loads(text)
+        result = _extract_json(text)
         return JudgeResult(
             notify=bool(result.get("notify", False)),
             reason=result.get("reason", ""),
@@ -176,7 +193,9 @@ Respond in JSON format:
             title=result.get("title", ""),
             creator=result.get("creator", ""),
         )
-    except (json.JSONDecodeError, IndexError, KeyError) as e:
+    except JudgeError:
+        raise
+    except (IndexError, KeyError) as e:
         raise JudgeError(f"Failed to parse judge response: {e}")
 
 
@@ -225,14 +244,11 @@ Respond in JSON format:
 
     try:
         text = response.content[0].text
-        text = text.strip()
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-        result = json.loads(text)
+        result = _extract_json(text)
         return SMSCommand(
             action=result.get("action", "unknown"),
             creator_name=result.get("creator_name"),
             duration_days=result.get("duration_days"),
         )
-    except (json.JSONDecodeError, IndexError, KeyError):
+    except (JudgeError, IndexError, KeyError):
         return SMSCommand(action="unknown", creator_name=None, duration_days=None)

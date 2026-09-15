@@ -155,17 +155,24 @@ async def run_scan(dry_run: bool = False):
                 if existing:
                     continue
 
-                search_results = await brave.search_release(creator.name, release_data["title"])
-                search_dicts = [
-                    {"title": r.title, "url": r.url, "snippet": r.snippet}
-                    for r in search_results
-                ]
+                try:
+                    search_results = await brave.search_release(creator.name, release_data["title"])
+                    search_dicts = [
+                        {"title": r.title, "url": r.url, "snippet": r.snippet}
+                        for r in search_results
+                    ]
 
-                judge_result = judge_watchlist_hit(
-                    creator={"name": creator.name, "tier": creator.tier, "category": creator.category},
-                    release_metadata=release_data,
-                    search_results=search_dicts,
-                )
+                    judge_result = judge_watchlist_hit(
+                        creator={"name": creator.name, "tier": creator.tier, "category": creator.category},
+                        release_metadata=release_data,
+                        search_results=search_dicts,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to judge release %r for creator %r — skipping",
+                        release_data.get("title"), creator.name,
+                    )
+                    continue
 
                 if judge_result.notify:
                     if creator.category == "music":

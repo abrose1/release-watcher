@@ -107,6 +107,47 @@ class TestJudgeWatchlistHit:
 
         assert result.notify is True
 
+    @patch("watcher.judge._get_client")
+    def test_trailing_text_after_json_does_not_raise(self, mock_client_factory):
+        """Reproduces the Sep 14 crash: Claude returns a valid JSON object followed
+        by an extra explanation.  Previously caused 'Extra data' JSONDecodeError."""
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_content_block = MagicMock()
+        mock_content_block.text = (
+            '{"notify": true, "reason": "Genuine new release", "best_link": "https://example.com"}\n\n'
+            "Note: This appears to be a legitimate new release based on search results."
+        )
+        mock_response.content = [mock_content_block]
+        mock_client.messages.create.return_value = mock_response
+        mock_client_factory.return_value = mock_client
+
+        result = judge_watchlist_hit(
+            creator={"name": "Marie Lu", "tier": 1, "category": "book"},
+            release_metadata={"title": "Rebel: The Graphic Novel", "type": "novel", "date": "2026-09-01"},
+            search_results=[],
+        )
+
+        assert result.notify is True
+        assert result.reason == "Genuine new release"
+
+    @patch("watcher.judge._get_client")
+    def test_no_json_in_response_raises_judge_error(self, mock_client_factory):
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_content_block = MagicMock()
+        mock_content_block.text = "I'm sorry, I cannot answer that."
+        mock_response.content = [mock_content_block]
+        mock_client.messages.create.return_value = mock_response
+        mock_client_factory.return_value = mock_client
+
+        with pytest.raises(JudgeError, match="no JSON object found"):
+            judge_watchlist_hit(
+                creator={"name": "Artist", "tier": 1, "category": "music"},
+                release_metadata={"title": "Album", "type": "album", "date": "2026-04-01"},
+                search_results=[],
+            )
+
 
 class TestJudgeDiscoveryCandidate:
     @patch("watcher.judge._get_client")
@@ -146,6 +187,29 @@ class TestJudgeDiscoveryCandidate:
         )
 
         assert result.notify is False
+
+    @patch("watcher.judge._get_client")
+    def test_trailing_text_after_json_does_not_raise(self, mock_client_factory):
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_content_block = MagicMock()
+        mock_content_block.text = (
+            '{"notify": true, "title": "Dark Album", "creator": "New Act", '
+            '"reason": "Similar dark aesthetic", "best_link": "https://example.com"}\n\n'
+            "This recommendation is based on the user's listening history."
+        )
+        mock_response.content = [mock_content_block]
+        mock_client.messages.create.return_value = mock_response
+        mock_client_factory.return_value = mock_client
+
+        result = judge_discovery_candidate(
+            candidate={"title": "Dark Album", "creator": "New Act", "category": "music", "description": ""},
+            taste_profile_slice={"top_creators": ["Test Artist A"], "film_taste": ""},
+            search_results=[],
+        )
+
+        assert result.notify is True
+        assert result.title == "Dark Album"
 
     @patch("watcher.judge._get_client")
     def test_discovery_prompt_no_review_scores(self, mock_client_factory):
