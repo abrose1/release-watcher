@@ -15,11 +15,15 @@ type = "cron"
 schedule = "0 14 * * *"
 startCommand = "python -m watcher.jobs.announcement"
 
-[[services]]
-name = "weekly-discovery-cron"
-type = "cron"
-schedule = "0 15 * * 0"
-startCommand = "python -m watcher.jobs.discovery"
+# DISABLED (Nov 2026): weekly-discovery-cron is intentionally turned off on Railway.
+# Its "Music similar to …" / "Books similar to …" texts were low-value spam. Do not
+# re-add or redeploy it unless the user asks. Code stays in watcher/jobs/discovery.py.
+# Railway service: no schedule + no-op echo start command (see README Deployment).
+# [[services]]
+# name = "weekly-discovery-cron"
+# type = "cron"
+# schedule = "0 15 * * 0"
+# startCommand = "python -m watcher.jobs.discovery"
 
 [[services]]
 name = "weekly-scan-taste-update-cron"

@@ -12,7 +12,7 @@ A scheduled agent that monitors new releases across books, music, TV, and movies
 
 1. **Daily scan** — Railway Cron checks each tracked creator for new releases via Spotify, TMDB, and Google Books APIs
 2. **Daily Tier 1 announcement scan** — Brave Search for each Tier 1 creator (releases / seasons). *Stretch:* concerts or tours for Tier 1 music acts.
-3. **Weekly discovery** — finds new releases matching your taste profile across all four categories. Music discovery seeds from your top tier 1/2 tracked artists (by profile score), not external playlists.
+3. **Weekly discovery** — finds new releases matching your taste profile across all four categories. Music discovery seeds from your top tier 1/2 tracked artists (by profile score), not external playlists. **Disabled in production (Nov 2026)** — see [Deployment](#deployment-railway).
 4. **Anthropic judge** — decides if each candidate is worth a notification based on taste fit, not review scores
 5. **Web search** — fires on every hit to find the best article/review link for the SMS
 6. **Twilio SMS** — sends a short formatted message with the link
@@ -134,10 +134,10 @@ watchlist:
 |---------|---------------|---------|
 | daily-scan | `0 14 * * *` (6am PT) | `python -m watcher.jobs.watchlist` |
 | announcement-scan | `0 14 * * *` | `python -m watcher.jobs.announcement` |
-| weekly-discovery | `0 15 * * 0` (7am PT Sun) | `python -m watcher.jobs.discovery` |
+| ~~weekly-discovery~~ **(disabled)** | ~~`0 15 * * 0` (7am PT Sun)~~ | `python -m watcher.jobs.discovery` |
 | weekly-sync | `0 13 * * 0` (5am PT Sun) | `python -m watcher.sync_creators` |
 
-The weekly sync runs before discovery so fresh creator data is available.
+**`weekly-discovery-cron` is turned off (Nov 2026).** Its "Music similar to …" / "Books similar to …" recommendations were low-value spam, so the Railway service was disabled and its block in `railway.toml` is commented out. On Railway the service still exists, but with **no cron schedule**, start command `echo "weekly-discovery disabled (Nov 2026)"`, and restart policy `NEVER`. To restore it, set the start command back to `python -m watcher.jobs.discovery` and re-add a schedule (it was `0 19 * * 5`, Fri 19:00 UTC). Change both together: a service with no schedule runs its start command immediately. The code in `watcher/jobs/discovery.py` is kept for reference. Don't re-enable or redeploy it unless the user asks.
 
 Stretch: a Railway Web service for the inbound SMS webhook (`watcher/webhook.py`) — only needed if building the SMS reply loop.
 

@@ -1,6 +1,10 @@
 """Weekly discovery job.
 
 Finds new releases matching the user's taste profile across music, film, TV, and books.
+
+DISABLED in production (Nov 2026): the weekly-discovery-cron Railway service is turned
+off because its recommendations were low-value spam. Do not re-enable or redeploy it
+unless the user asks. Manual `--dry-run` runs are fine.
 """
 
 import argparse

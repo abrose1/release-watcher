@@ -69,6 +69,7 @@ isProject: false
 ## What It Does
 
 - Runs on Railway Cron services (daily watchlist scan, weekly discovery)
+  - **Update Nov 2026:** weekly discovery is **disabled** in production because its recs were low-value spam. See the release-watcher README's Deployment section.
 - Monitors your explicit watchlist + occasional discovery recs based on taste fit
 - Texts you via Twilio with a real article/announcement link (via web search), not just an API page
 - Tracks everything it's already told you so it never spams
